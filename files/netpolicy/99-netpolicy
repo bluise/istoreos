@@ -1,0 +1,95 @@
+#!/bin/sh
+# ============================================================================
+# 默认网络策略（首次开机执行一次；uci-defaults 在 config_generate 之后运行）
+#   · LAN 固定为静态 10.0.0.1
+#   · 双网口：第一个网口(eth0) = WAN，第二个网口(eth1) = LAN
+#   · 单网口：该网口 = LAN（不配置 WAN）
+# 说明：网口顺序按内核命名 eth0 / eth1 …（板载一般是 eth0；USB 网卡一般排在其后）。
+#       想反过来，把下面的 FIRST/SECOND 用法对调即可。
+# ============================================================================
+
+LAN_IP='10.0.0.1'
+LAN_MASK='255.255.255.0'
+
+log() { logger -t netpolicy "$*" 2>/dev/null; echo "netpolicy: $*"; }
+
+# 物理网口列表（按名字排序：eth0, eth1 ...）
+nics() {
+	for d in /sys/class/net/*; do
+		n=${d##*/}
+		[ -e "$d/device" ] || continue          # 只保留有底层设备的(排除 lo / br-* / wlan 之外的虚拟口)
+		case "$n" in
+			lo|br-*|veth*|docker*|@*) continue ;;
+			eth*|en*) echo "$n" ;;
+		esac
+	done | sort
+}
+
+[ -f /etc/config/network ] || exit 0
+
+LIST=$(nics)
+N=$(echo "$LIST" | grep -c .)
+FIRST=$(echo "$LIST" | sed -n 1p)
+SECOND=$(echo "$LIST" | sed -n 2p)
+
+if [ "$N" -ge 2 ]; then
+	LAN_NIC="$SECOND"
+	WAN_NIC="$FIRST"
+else
+	LAN_NIC="$FIRST"
+	WAN_NIC=""
+fi
+[ -n "$LAN_NIC" ] || { log "没找到物理网口，保持原样"; exit 0; }
+log "检测到 $N 个网口: $(echo $LIST | tr '\n' ' ') -> LAN=$LAN_NIC WAN=${WAN_NIC:-无}"
+
+# ---- 重建 LAN / WAN ----
+uci -q delete network.lan
+uci -q delete network.wan
+uci -q delete network.wan6
+
+# 删掉名为 br-lan 的 device 段
+i=0
+while uci -q get network.@device[$i] >/dev/null; do
+	if [ "$(uci -q get network.@device[$i].name)" = "br-lan" ]; then
+		uci -q delete network.@device[$i]
+		continue
+	fi
+	i=$((i + 1))
+done
+
+uci add network device >/dev/null
+uci set network.@device[-1].name='br-lan'
+uci set network.@device[-1].type='bridge'
+uci add_list network.@device[-1].ports="$LAN_NIC"
+
+uci set network.lan=interface
+uci set network.lan.device='br-lan'
+uci set network.lan.proto='static'
+uci set network.lan.ipaddr="$LAN_IP"
+uci set network.lan.netmask="$LAN_MASK"
+uci set network.lan.ip6assign='60'
+
+if [ -n "$WAN_NIC" ]; then
+	uci set network.wan=interface
+	uci set network.wan.device="$WAN_NIC"
+	uci set network.wan.proto='dhcp'
+	uci set network.wan6=interface
+	uci set network.wan6.device='@wan'
+	uci set network.wan6.proto='dhcpv6'
+fi
+uci commit network
+
+# ---- DHCP 地址池跟着 LAN 走 ----
+if [ -e /etc/config/dhcp ]; then
+	uci set dhcp.lan=dhcp
+	uci set dhcp.lan.interface='lan'
+	uci set dhcp.lan.start='100'
+	uci set dhcp.lan.limit='150'
+	uci set dhcp.lan.leasetime='12h'
+	uci set dhcp.lan.ignore='0'
+	uci commit dhcp
+fi
+
+# ---- 让 dnsmasq / 防火墙按新配置重新加载（此时 network 服务还未启动，通常不需要）----
+log "已应用: LAN=$LAN_IP (br-lan -> $LAN_NIC)"$([ -n "$WAN_NIC" ] && echo ", WAN=$WAN_NIC(dhcp)")
+exit 0

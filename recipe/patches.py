@@ -294,10 +294,52 @@ def patch_ota(root):
     print("  OTA 地址已指向本仓库 Release（改了 %d 行）" % n)
 
 
+
+# ---------------------------------------------------------------------------
+# 8) 默认网络策略：LAN = 10.0.0.1；双网口 -> 第一口 WAN、第二口 LAN；单网口 -> LAN
+#    真正的分配逻辑放在 /etc/uci-defaults/99-netpolicy（首启执行，排在 config_generate
+#    和 09_istoreos 之后）。这里只负责把脚本放进去，并顺手把镜像里写死的
+#    192.168.100.1 兜底替换成 10.0.0.1。
+# ---------------------------------------------------------------------------
+def patch_network(root, files_dir):
+    src = os.path.join(files_dir, "netpolicy", "99-netpolicy")
+    if not os.path.exists(src):
+        FAIL.append("缺少网络策略脚本: %s" % src)
+        return
+    copy(src, os.path.join(root, "etc/uci-defaults/99-netpolicy"), 0o755)
+
+    targets = [
+        "etc/board.json",
+        "etc/config/network",
+        "etc/config/dhcp",
+        "etc/config/system",
+        "etc/uci-defaults/09_istoreos",
+        "usr/libexec/blockmount.sh",
+    ]
+    n = 0
+    for rel in targets:
+        f = os.path.join(root, rel)
+        if not os.path.isfile(f):
+            continue
+        try:
+            t = _read(f)
+        except Exception:
+            continue
+        if "192.168.100.1" in t:
+            _write(f, t.replace("192.168.100.1", "10.0.0.1"))
+            n += 1
+        if "192.168.100." in t:
+            t = _read(f)
+            _write(f, t.replace("192.168.100.", "10.0.0."))
+            n += 1
+    print("  已放入默认网络策略脚本（并兜底替换了 %d 个文件里的 192.168.100.x）" % n)
+
+
 # ---------------------------------------------------------------------------
 def patch_all(root, files_dir, oaf_v7=False):
     patch_smartd_conf(root)
     patch_ota(root)
+    patch_network(root, files_dir)
     patch_quickstart_spa(root, oaf_v7=oaf_v7)
     patch_luci(root)
     patch_theme(root)
