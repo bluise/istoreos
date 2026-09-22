@@ -48,16 +48,32 @@ def sh(cmd):
 
 # ---------------------------------------------------------------- 解包
 def download(url, dst):
+    """下载官方镜像：aria2c 优先（快），失败自动退回 curl 重试。"""
     if os.path.exists(dst) and os.path.getsize(dst) > 0:
         print("  已存在，跳过下载:", dst)
         return dst
     os.makedirs(os.path.dirname(dst), exist_ok=True)
     print("  下载:", url)
+    attempts = []
     if shutil.which("aria2c"):
-        run(["aria2c", "-x", "8", "-s", "8", "-d", os.path.dirname(dst), "-o", os.path.basename(dst), url])
-    else:
-        run(["curl", "-fSL", "--retry", "3", "-o", dst, url])
-    return dst
+        attempts.append(["aria2c", "-x", "4", "-s", "4", "--retry-wait=5", "-m", "3",
+                         "--console-log-level=warn", "-d", os.path.dirname(dst),
+                         "-o", os.path.basename(dst), url])
+    attempts.append(["curl", "-fSL", "--retry", "5", "--retry-delay", "5", "--retry-all-errors",
+                     "-o", dst, url])
+    last = None
+    for cmd in attempts:
+        if os.path.exists(dst) and os.path.getsize(dst) > 0:
+            os.unlink(dst)
+        try:
+            run(cmd)
+        except subprocess.CalledProcessError as e:
+            last = e
+            print("  ! 下载方式失败（%s），换下一种" % cmd[0])
+            continue
+        if os.path.exists(dst) and os.path.getsize(dst) > 0:
+            return dst
+    raise SystemExit("✗ 镜像下载失败: %s" % last)
 
 
 def gunzip_to(src, dst):
