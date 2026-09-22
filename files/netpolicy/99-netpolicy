@@ -79,6 +79,68 @@ if [ -n "$WAN_NIC" ]; then
 fi
 uci commit network
 
+# ---- 清理"设备不存在"的悬挂接口 ----
+# 例如旧配置里留下的 wan6（device='@wan' 而 wan 已不存在）会在 LuCI 里显示"设备不存在"。
+# 这里统一体检一遍：device 既不存在的网络设备、也不是有效的 @引用 的接口，直接删掉。
+iface_exists() {
+	uci -q get network.$1 >/dev/null 2>&1
+}
+dev_exists() {
+	[ -e "/sys/class/net/$1" ] && return 0
+	i=0
+	while uci -q get network.@device[$i] >/dev/null; do
+		[ "$(uci -q get network.@device[$i].name)" = "$1" ] && return 0
+		i=$((i + 1))
+	done
+	return 1
+}
+dropped=""
+i=0
+while uci -q get network.@interface[$i] >/dev/null; do
+	sec=$(uci -q get network.@interface[$i] 2>/dev/null)
+	dev=$(uci -q get network.@interface[$i].device)
+	keep=1
+	if [ -n "$dev" ]; then
+		case "$dev" in
+			@*)  ref=${dev#@}; iface_exists "$ref" || keep=0 ;;
+			*)   dev_exists "$dev" || keep=0 ;;
+		esac
+	fi
+	if [ "$keep" = 0 ]; then
+		dropped="$dropped $sec"
+		uci -q delete network.@interface[$i]
+		uci commit network
+		continue
+	fi
+	i=$((i + 1))
+done
+# 具名接口同样体检（lan/wan 等）
+for sec in $(uci -q show network | sed -n 's/^\(network\.[A-Za-z0-9_]*\)=interface$/\1/p'); do
+	case "$sec" in network.loopback) continue ;; esac
+	dev=$(uci -q get "$sec.device")
+	[ -n "$dev" ] || continue
+	keep=1
+	case "$dev" in
+		@*)  ref=${dev#@}; iface_exists "$ref" || keep=0 ;;
+		*)   dev_exists "$dev" || keep=0 ;;
+	esac
+	if [ "$keep" = 0 ]; then
+		dropped="$dropped $sec"
+		uci -q delete "$sec"
+		uci commit network
+	fi
+done
+[ -n "$dropped" ] && log "已删除设备不存在的接口:$dropped"
+
+# ---- 单网口（没有 WAN）时，给 LAN 配上公共 DNS，避免首页报"DNS 配置错误" ----
+if [ -z "$WAN_NIC" ]; then
+	uci -q delete network.lan.dns
+	uci add_list network.lan.dns='223.5.5.5'
+	uci add_list network.lan.dns='119.29.29.29'
+	uci commit network
+	log "单网口模式：LAN 已配置公共 DNS（223.5.5.5 / 119.29.29.29）"
+fi
+
 # ---- DHCP 地址池跟着 LAN 走 ----
 if [ -e /etc/config/dhcp ]; then
 	uci set dhcp.lan=dhcp

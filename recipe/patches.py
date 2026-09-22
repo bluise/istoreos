@@ -138,7 +138,7 @@ def patch_quickstart_spa(root, oaf_v7=False):
 def patch_luci(root):
     # 2a. 系统 -> Argon主题设置 改名成 主题设置
     edit(os.path.join(root, "usr/lib/lua/luci/controller/argon-config.lua"), [
-        ('_("Argon Config")', '"\\u4E3B\\u9898\\u8BBE\\u7F6E"'),
+        ('_("Argon Config")', '"主题设置"'),
     ], required=False)
 
     # 2b. 「网络存储」下不再显示 磁盘阵列 / S.M.A.R.T.（quickstart 注册的两条路由）
