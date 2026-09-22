@@ -210,10 +210,16 @@ def remove_packages(root, listfile):
 
 # ---------------------------------------------------------------- 装包（用镜像自带的 apk）
 def apk(root, args, extra_repos=()):
+    """用镜像自带的 apk（musl 加载器）往 rootfs 里装包。
+
+    注意：这里一律加 --no-scripts。包里的 post-install 脚本在非 root、非目标系统的
+    环境里跑不起来（CI 上会 exit 127），而且它们的实际效果（uci 默认值、模块加载等）
+    在设备首次开机时会由 uci-defaults 正常完成，所以离线构建阶段跳过它们最稳。
+    """
     ld = os.path.join(root, "lib/ld-musl-x86_64.so.1")
     apkbin = os.path.join(root, "usr/bin/apk")
     cmd = [ld, "--library-path", "%s/lib:%s/usr/lib" % (root, root), apkbin,
-           "--root", root, "--allow-untrusted"]
+           "--root", root, "--allow-untrusted", "--no-scripts"]
     for r in extra_repos:
         cmd += ["--repository", r]
     cmd += list(args)
