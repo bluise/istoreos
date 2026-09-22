@@ -42,9 +42,14 @@ fi
 [ -n "$LAN_NIC" ] || { log "没找到物理网口，保持原样"; exit 0; }
 log "检测到 $N 个网口: $(echo $LIST | tr '\n' ' ') -> LAN=$LAN_NIC WAN=${WAN_NIC:-无}"
 
-# ---- 干脆整份重写：清掉所有 interface / device 段，再按策略建立 ----
-uci -q delete network.@interface[*]
-uci -q delete network.@device[*]
+# ---- 清掉所有 lan/wan 相关段（含匿名段：uci 的 @type[*] 在本版本不可靠，按下标逐个删）----
+uci -q delete network.lan
+uci -q delete network.wan
+uci -q delete network.wan6
+uci -q delete network.wwan
+uci -q delete network.wwan6
+while uci -q get network.@interface[0] >/dev/null; do uci -q delete network.@interface[0]; done
+while uci -q get network.@device[0] >/dev/null; do uci -q delete network.@device[0]; done
 
 uci set network.loopback=interface
 uci set network.loopback.device='lo'
