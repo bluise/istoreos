@@ -29,6 +29,15 @@ import tarfile
 import gzip
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+# 官方 OTA 清单所在的几个基址（设备上的 OTA 用的也是这套清单）。
+# 留空 --upstream-url 时，会依次尝试从这些基址读 version.latest.v2 来发现"当前官方镜像"，
+# 并优先用清单里的 SHA256 做校验。
+OTA_BASES = [
+    "https://fw.koolcenter.com/iStoreOS/x86_64_efi",
+    "https://dl.istoreos.com/iStoreOS/x86_64_efi",
+    "https://fw0.koolcenter.com/iStoreOS/x86_64_efi",
+]
+
 P2_SECTOR = 262656          # p2 起始扇区
 P2_OFF = P2_SECTOR * 512    # 134479872
 P2_BYTES = 524288 * 512     # 256 MiB
@@ -74,6 +83,30 @@ def download(url, dst):
         if os.path.exists(dst) and os.path.getsize(dst) > 0:
             return dst
     raise SystemExit("✗ 镜像下载失败: %s" % last)
+
+
+def discover_upstream():
+    """从官方 OTA 清单里取当前官方镜像的文件名 + sha256。"""
+    for base in OTA_BASES:
+        try:
+            r = subprocess.run(["curl", "-fsSL", "--connect-timeout", "8", "--max-time", "25",
+                                base + "/version.latest.v2"],
+                               capture_output=True, text=True)
+        except Exception as e:
+            print("  ! 取清单失败 %s: %s" % (base, e))
+            continue
+        if r.returncode != 0 or not r.stdout.strip():
+            continue
+        lines = r.stdout.strip().split("\n")
+        m = re.search(r"\((.+?)\)", lines[0])
+        sha = ""
+        for l in lines:
+            if l.startswith("SHA256:"):
+                sha = l.split(":", 1)[1].strip()
+        if m:
+            print("  发现当前官方镜像: %s  (来自 %s)" % (m.group(1), base))
+            return m.group(1), sha
+    return None, None
 
 
 def gunzip_to(src, dst):
@@ -463,10 +496,37 @@ def main():
     root = os.path.join(work, "root")
 
     print("[1/6] 取得官方镜像")
+    want_sha = ""
     if args.upstream_file:
         src = args.upstream_file
     else:
-        src = download(args.upstream_url, os.path.join(work, os.path.basename(args.upstream_url)))
+        if args.upstream_url:
+            cands = [args.upstream_url]
+        else:
+            fname, want_sha = discover_upstream()
+            if not fname:
+                sys.exit("✗ 无法从官方 OTA 清单发现当前镜像，请用 --upstream-url 指定")
+            cands = [b + "/" + fname for b in OTA_BASES]
+        src = None
+        for u in cands:
+            dst = os.path.join(work, os.path.basename(u))
+            try:
+                download(u, dst)
+            except SystemExit as e:
+                print("  ! 该源下载失败: %s" % u)
+                continue
+            if want_sha:
+                got = hashlib.sha256(open(dst, "rb").read()).hexdigest()
+                if got != want_sha:
+                    print("  ! 校验不符（清单 %s / 实际 %s），换下一个源" % (want_sha[:16], got[:16]))
+                    os.unlink(dst)
+                    continue
+            src = dst
+            with open(os.path.join(os.path.dirname(os.path.dirname(args.out)) or ".", "upstream.name"), "w") as fh:
+                fh.write(os.path.basename(u) + "\n")
+            break
+        if not src:
+            sys.exit("✗ 所有镜像源都下载失败")
     gunzip_to(src, raw)
 
     print("[2/6] 解包 rootfs")

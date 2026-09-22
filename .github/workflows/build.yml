@@ -7,9 +7,9 @@ on:
   workflow_dispatch:
     inputs:
       upstream_url:
-        description: '官方镜像 img.gz 的完整 URL（上游出新版时换成新链接）'
-        required: true
-        default: 'https://fw.koolcenter.com/iStoreOS/x86_64_efi/istoreos-25.12.5-2026091113-x86-64-squashfs-combined-efi.img.gz'
+        description: '官方镜像 URL；留空=自动从官方 OTA 清单取“当前最新”（推荐留空）'
+        required: false
+        default: ''
       openclash_version:
         description: 'OpenClash 版本（上游 vernesong/OpenClash）'
         required: true
@@ -63,7 +63,11 @@ jobs:
       - name: 构建精简镜像
         run: |
           set -e
-          ARGS="--upstream-url '${{ inputs.upstream_url }}'"
+          if [ -n "${{ inputs.upstream_url }}" ]; then
+            ARGS="--upstream-url '${{ inputs.upstream_url }}'"
+          else
+            ARGS=""   # 留空 -> 配方自己去官方 OTA 清单里找当前最新镜像
+          fi
           ARGS="$ARGS --out iStoreOS-efi.img.gz --work $RUNNER_TEMP/slim"
           ARGS="$ARGS --openclash-apk openclash.apk --ddns-go-tar ddns-go.tar.gz"
           if [ "${{ inputs.use_oaf_v7 }}" = "true" ]; then ARGS="$ARGS --oaf-dir files/oaf"; fi
@@ -73,7 +77,11 @@ jobs:
       - name: 生成 OTA 清单（让设备上的 OTA 指向本仓库）
         run: |
           set -e
-          VER=$(basename "${{ inputs.upstream_url }}" | sed -nE 's/^istoreos-([0-9.]+)-([0-9]+)-.*/\1-\2/p')
+          if [ -f upstream.name ]; then
+            VER=$(sed -nE 's/^istoreos-([0-9.]+)-([0-9]+)-.*/\1-\2/p' upstream.name)
+          else
+            VER=$(basename "${{ inputs.upstream_url }}" | sed -nE 's/^istoreos-([0-9.]+)-([0-9]+)-.*/\1-\2/p')
+          fi
           [ -n "$VER" ] || VER="unknown-$(date +%Y%m%d)"
           IMG=iStoreOS-efi.img.gz
           SHA=$(cut -d' ' -f1 $IMG.sha256)
