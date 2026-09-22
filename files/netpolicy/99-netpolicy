@@ -90,6 +90,10 @@ if [ -e /etc/config/dhcp ]; then
 	uci commit dhcp
 fi
 
-# ---- 让 dnsmasq / 防火墙按新配置重新加载（此时 network 服务还未启动，通常不需要）----
+# ---- 让网络按新配置重新生效 ----
+# 单网口机型上 OpenWrt 默认把 LAN 生成成 DHCP；如果 netifd 已经用旧配置起来了，
+# 不 reload 的话会残留一个 DHCP 租约地址。这里统一 reload 一次。
+/etc/init.d/network reload >/dev/null 2>&1
+sleep 3
 log "已应用: LAN=$LAN_IP (br-lan -> $LAN_NIC)"$([ -n "$WAN_NIC" ] && echo ", WAN=$WAN_NIC(dhcp)")
 exit 0
