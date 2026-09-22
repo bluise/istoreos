@@ -32,6 +32,18 @@ N=$(echo "$LIST" | grep -c .)
 FIRST=$(echo "$LIST" | sed -n 1p)
 SECOND=$(echo "$LIST" | sed -n 2p)
 
+
+# ---- 幂等保护：已经符合策略就直接退出（避免每次开机都改配置、反复触发“应用配置”）----
+CUR_IP=$(uci -q get network.lan.ipaddr)
+CUR_DEV=$(uci -q get network.lan.device)
+CUR_PORTS=$(uci -q get network.@device[0].ports)
+if [ "$CUR_IP" = "$LAN_IP" ] && [ -n "$CUR_DEV" ] && echo "$CUR_PORTS" | grep -qw "$LAN_NIC"; then
+	if [ -z "$WAN_NIC" ] || [ "$(uci -q get network.wan.device)" = "$WAN_NIC" ]; then
+		log "网络已符合策略（LAN=$LAN_IP 于 $LAN_NIC），跳过"
+		exit 0
+	fi
+fi
+
 if [ "$N" -ge 2 ]; then
 	LAN_NIC="$SECOND"
 	WAN_NIC="$FIRST"
@@ -157,5 +169,8 @@ fi
 # 不 reload 的话会残留一个 DHCP 租约地址。这里统一 reload 一次。
 /etc/init.d/network reload >/dev/null 2>&1
 sleep 3
+touch /etc/.netpolicy.applied
 log "已应用: LAN=$LAN_IP (br-lan -> $LAN_NIC)"$([ -n "$WAN_NIC" ] && echo ", WAN=$WAN_NIC(dhcp)")
+exit 0
+
 exit 0

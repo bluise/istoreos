@@ -302,11 +302,11 @@ def patch_ota(root):
 #    192.168.100.1 兜底替换成 10.0.0.1。
 # ---------------------------------------------------------------------------
 def patch_network(root, files_dir):
-    src = os.path.join(files_dir, "netpolicy", "99-netpolicy")
+    src = os.path.join(files_dir, "netpolicy", "98-netpolicy-v2")
     if not os.path.exists(src):
         FAIL.append("缺少网络策略脚本: %s" % src)
         return
-    copy(src, os.path.join(root, "etc/uci-defaults/99-netpolicy"), 0o755)
+    copy(src, os.path.join(root, "etc/uci-defaults/98-netpolicy-v2"), 0o755)
 
     targets = [
         "etc/board.json",
