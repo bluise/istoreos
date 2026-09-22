@@ -294,8 +294,13 @@ def stage_extras(root, args, work):
             print("  ! OAF 内核模块(%s)与镜像内核(%s)不匹配，跳过 OAF 升级"
                   % (os.path.basename(kmods[0]), kern))
         else:
-            for f in files:
-                apk(root, ["add", f], extra_repos=repos)
+            # 必须一次性整组装：分开装会因为文件归属冲突失败
+            # （appfilter 7.x 要覆盖 luci-app-oaf 6.x 的 usr/share/rpcd/acl.d/luci-app-oaf.json）
+            try:
+                apk(root, ["add"] + files, extra_repos=repos)
+            except subprocess.CalledProcessError:
+                print("  ! 整组装失败，改用 --force-overwrite 重试")
+                apk(root, ["add", "--force-overwrite"] + files, extra_repos=repos)
             args._oaf_v7 = True
     # DDNS-GO 二进制
     if args.ddns_go_tar:
