@@ -287,8 +287,9 @@ def stage_extras(root, args, work):
             norm_apk(os.path.join(args.oaf_dir, f), work)
             for f in os.listdir(args.oaf_dir) if f.endswith(".apk"))
         kmods = [f for f in files if "kmod-oaf" in os.path.basename(f)]
-        kern = sorted(os.listdir(os.path.join(root, "lib/modules")))[0] if os.path.isdir(
-            os.path.join(root, "lib/modules")) else ""
+        kdir = os.path.join(root, "lib/modules")
+        ks = [d for d in sorted(os.listdir(kdir)) if re.match(r"^\d+(\.\d+)+", d)] if os.path.isdir(kdir) else []
+        kern = ks[0] if ks else ""
         if kmods and kern and kern not in os.path.basename(kmods[0]):
             print("  ! OAF 内核模块(%s)与镜像内核(%s)不匹配，跳过 OAF 升级"
                   % (os.path.basename(kmods[0]), kern))

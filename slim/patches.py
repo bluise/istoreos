@@ -215,19 +215,20 @@ def patch_smartd_conf(root):
 # ---------------------------------------------------------------------------
 # 5) DDNS-GO：二进制（由工作流下载）+ 集成文件
 # ---------------------------------------------------------------------------
+# (目标路径, 仓库里的文件名, 权限)
 DDNS_GO_FILES = [
-    ("etc/init.d/ddns-go", 0o755),
-    ("etc/config/ddns-go", 0o644),
-    ("etc/uci-defaults/95-ddns-go", 0o755),
-    ("usr/lib/lua/luci/controller/ddnsgo.lua", 0o644),
-    ("usr/lib/lua/luci/view/ddnsgo.htm", 0o644),
-    ("usr/share/rpcd/acl.d/luci-app-ddns-go.json", 0o644),
+    ("etc/init.d/ddns-go", "init.d-ddns-go", 0o755),
+    ("etc/config/ddns-go", "config-ddns-go", 0o644),
+    ("etc/uci-defaults/95-ddns-go", "95-ddns-go", 0o755),
+    ("usr/lib/lua/luci/controller/ddnsgo.lua", "ddnsgo.lua", 0o644),
+    ("usr/lib/lua/luci/view/ddnsgo.htm", "ddnsgo.htm", 0o644),
+    ("usr/share/rpcd/acl.d/luci-app-ddns-go.json", "luci-app-ddns-go.json", 0o644),
 ]
 
 
 def patch_ddns_go(root, files_dir, binary=None):
-    for rel, mode in DDNS_GO_FILES:
-        src = os.path.join(files_dir, "ddns-go", os.path.basename(rel))
+    for rel, fname, mode in DDNS_GO_FILES:
+        src = os.path.join(files_dir, "ddns-go", fname)
         dst = os.path.join(root, rel)
         if not os.path.exists(src):
             FAIL.append("缺少 DDNS-GO 集成文件: %s" % src)
