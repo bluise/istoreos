@@ -42,20 +42,15 @@ fi
 [ -n "$LAN_NIC" ] || { log "没找到物理网口，保持原样"; exit 0; }
 log "检测到 $N 个网口: $(echo $LIST | tr '\n' ' ') -> LAN=$LAN_NIC WAN=${WAN_NIC:-无}"
 
-# ---- 重建 LAN / WAN ----
-uci -q delete network.lan
-uci -q delete network.wan
-uci -q delete network.wan6
+# ---- 干脆整份重写：清掉所有 interface / device 段，再按策略建立 ----
+uci -q delete network.@interface[*]
+uci -q delete network.@device[*]
 
-# 删掉名为 br-lan 的 device 段
-i=0
-while uci -q get network.@device[$i] >/dev/null; do
-	if [ "$(uci -q get network.@device[$i].name)" = "br-lan" ]; then
-		uci -q delete network.@device[$i]
-		continue
-	fi
-	i=$((i + 1))
-done
+uci set network.loopback=interface
+uci set network.loopback.device='lo'
+uci set network.loopback.proto='static'
+uci set network.loopback.ipaddr='127.0.0.1'
+uci set network.loopback.netmask='255.0.0.0'
 
 uci add network device >/dev/null
 uci set network.@device[-1].name='br-lan'
