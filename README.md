@@ -19,12 +19,12 @@
    | `ddns_go_version` | DDNS-GO 版本，默认 `6.17.7`（上游 jeessy2/ddns-go） |
    | `use_oaf_v7` | 是否把 OAF 升到 v7（默认开；内核版本不匹配会自动跳过） |
    | `make_release` | 构建成功后自动发布 Release（默认开） |
-3. 等 10~20 分钟 → 到 **Releases** 下载 `iStoreOS-slim-efi.img.gz`
+3. 等 10~20 分钟 → 到 **Releases** 下载 `iStoreOS-efi.img.gz`
 4. **刷机（在线升级，不用 U 盘）**：
    系统 → **备份/刷写固件** → 选这个 `img.gz` → 刷写 → 自动重启
    - 只重写引导分区 + rootfs，**overlay 分区不动** → 配置和你在应用商店装的插件都保留
    - ⚠️ 不要点「系统 → OTA」那个按钮：它下的是**官方完整镜像**，会把这些精简全部冲掉
-5. 全新装机（空盘）：`gunzip -c iStoreOS-slim-efi.img.gz | sudo dd of=/dev/sdX bs=4M conv=fsync`
+5. 全新装机（空盘）：`gunzip -c iStoreOS-efi.img.gz | sudo dd of=/dev/sdX bs=4M conv=fsync`
    或直接用 balenaEtcher 写这个 img.gz
 
 ---
@@ -35,8 +35,8 @@
   无关无线/网卡固件、易有云 linkease/ddnsto、Perl 运行库、4G 模组、luci-theme-bootstrap、
   ddns-scripts 系列、mdadm+smartmontools 系列、WireGuard 界面、unet 异地组网、
   网络唤醒 WOL、CIFS 网络共享挂载 等）
-  完整清单与逐项原因：`slim/remove-packages.txt`（本仓库文档里也有详细版）
-- **额外装回来**（`slim/extra-packages.txt`）：
+  完整清单与逐项原因：`recipe/remove-packages.txt`（本仓库文档里也有详细版）
+- **额外装回来**（`recipe/extra-packages.txt`）：
   | 内容 | 用途 |
   |---|---|
   | DDNS-GO v6.17.7（静态二进制 + LuCI 页面 + 9876 网页界面 + 开机自启） | 动态域名 |
@@ -44,7 +44,7 @@
   | ruby + ruby-yaml 等 | OpenClash 处理 yaml 用 |
   | `kmod-sdhci` / `kmod-mwifiex-sdio` / `mwifiex-sdio-firmware` | Dell Wyse 3040 的 SDIO 无线 |
   | OAF v7（appfilter / kmod-oaf / luci-app-oaf / i18n，可选） | 应用过滤、家长控制 |
-- **界面精简**（`slim/patches.py`，每处都带断言，上游改版会立刻报错）：
+- **界面精简**（`recipe/patches.py`，每处都带断言，上游改版会立刻报错）：
   - 首页去掉 4 张卡片：存储服务、下载服务、远程域名、配置模块
   - 首页「文件管理」旁 ⋮ 菜单去掉 RAID管理 / S.M.A.R.T.
   - 「系统 → Argon主题设置」改名「主题设置」；只保留 Argon 主题
@@ -58,11 +58,11 @@
 ## 三、仓库结构
 
 ```
-.github/workflows/slim.yml   工作流：下载官方镜像 + 插件 → 跑配方 → 出镜像 → 发 Release
-slim/slim.py                 主流程：解包 → 删包 → 补装 → 打补丁 → 重打包 → 自检
-slim/patches.py              所有界面/配置补丁（带断言，改不上就报错）
-slim/remove-packages.txt     要删的 330 个包（相对官方镜像）
-slim/extra-packages.txt      要补装的包
+.github/workflows/build.yml   工作流：下载官方镜像 + 插件 → 跑配方 → 出镜像 → 发 Release
+recipe/build.py                 主流程：解包 → 删包 → 补装 → 打补丁 → 重打包 → 自检
+recipe/patches.py              所有界面/配置补丁（带断言，改不上就报错）
+recipe/remove-packages.txt     要删的 330 个包（相对官方镜像）
+recipe/extra-packages.txt      要补装的包
 files/ddns-go/*              DDNS-GO 的 LuCI 集成文件（init.d / config / uci-defaults / 控制器 / 页面 / ACL）
 files/oaf/*                  OAF v7 的 4 个 apk（内核不匹配时自动跳过）
 ```
@@ -73,12 +73,12 @@ files/oaf/*                  OAF v7 的 4 个 apk（内核不匹配时自动跳�
 
 ```sh
 # 依赖：python3 + squashfs-tools（mksquashfs/unsquashfs）+ pigz + curl
-python3 slim/slim.py \
+python3 recipe/build.py \
   --upstream-file 官方.img.gz \
   --openclash-apk openclash.apk \
   --ddns-go-tar  ddns-go.tar.gz \
   --oaf-dir       files/oaf \
-  --out iStoreOS-slim-efi.img.gz
+  --out iStoreOS-efi.img.gz
 # 也可以直接给 URL：--upstream-url https://.../istoreos-xxx.img.gz
 ```
 
@@ -112,7 +112,7 @@ python3 slim/slim.py \
 本仓库的工作流已实际跑通并验证（2026-09-22）：
 
 - Actions 运行一次约 **4 分钟**（docker 免费额度友好；公开仓库不消耗额度）
-- 产出 `iStoreOS-slim-efi.img.gz` 约 **62.2 MB**，并在 Release 里带 sha256
+- 产出 `iStoreOS-efi.img.gz` 约 **62.2 MB**，并在 Release 里带 sha256
 - 把该产物在 KVM 虚拟机里真机启动验证：
   - 能启动；首页 200；**首页"磁盘信息"正常**（守护进程磁盘接口 200 且返回真实磁盘数据）
   - DDNS-GO 首启即在运行（进程 1 个、9876 网页界面可访问）

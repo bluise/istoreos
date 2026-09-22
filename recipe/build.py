@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-istoreos-slim / slim.py
+istoreos / recipe/build.py
 =======================
 把「官方 iStoreOS x86_64 镜像」变成「精简版镜像」。整套流程全部可复现：
 
@@ -15,7 +15,7 @@ istoreos-slim / slim.py
   8. 自检：关键文件存在、应删项不存在、p2 区段与 squashfs 逐字节一致、解压长度正确
 
 用法:
-  python3 slim/slim.py --upstream-url <官方 img.gz URL> --out <输出 img.gz> \
+  python3 recipe/build.py --upstream-url <官方 img.gz URL> --out <输出 img.gz> \
       [--openclash-apk f.apk] [--ddns-go-tar f.tar.gz] [--oaf-dir DIR] [--work DIR]
 """
 import argparse
@@ -286,7 +286,7 @@ def norm_apk(src, work, name=None):
 
 def stage_extras(root, args, work):
     repos = list(args.repo or [])
-    extras_file = os.path.join(os.path.dirname(HERE), "slim", "extra-packages.txt")
+    extras_file = os.path.join(os.path.dirname(HERE), "recipe", "extra-packages.txt")
     extras = [p for p in read_list(extras_file) if p != "luci-app-openclash"]
     # ruby / ruby-yaml + Wyse 3040 的 SDIO 无线链（清单见 slim/extra-packages.txt）
     apk(root, ["add"] + extras, extra_repos=repos)
@@ -460,7 +460,7 @@ def main():
         rewrite_mirrors(root)
 
     print("[3/6] 删包")
-    remove_packages(root, os.path.join(os.path.dirname(HERE), "slim", "remove-packages.txt"))
+    remove_packages(root, os.path.join(os.path.dirname(HERE), "recipe", "remove-packages.txt"))
 
     print("[4/6] 补装 / 放入 extras")
     stage_extras(root, args, work)

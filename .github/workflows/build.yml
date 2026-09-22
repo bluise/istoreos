@@ -64,26 +64,26 @@ jobs:
         run: |
           set -e
           ARGS="--upstream-url '${{ inputs.upstream_url }}'"
-          ARGS="$ARGS --out iStoreOS-slim-efi.img.gz --work $RUNNER_TEMP/slim"
+          ARGS="$ARGS --out iStoreOS-efi.img.gz --work $RUNNER_TEMP/slim"
           ARGS="$ARGS --openclash-apk openclash.apk --ddns-go-tar ddns-go.tar.gz"
           if [ "${{ inputs.use_oaf_v7 }}" = "true" ]; then ARGS="$ARGS --oaf-dir files/oaf"; fi
-          eval python3 slim/slim.py $ARGS
-          ls -lh iStoreOS-slim-efi.img.gz*
+          eval python3 recipe/build.py $ARGS
+          ls -lh iStoreOS-efi.img.gz*
 
       - name: 上传构建产物
         uses: actions/upload-artifact@v4
         with:
-          name: iStoreOS-slim-efi
+          name: iStoreOS-efi
           path: |
-            iStoreOS-slim-efi.img.gz
-            iStoreOS-slim-efi.img.gz.sha256
+            iStoreOS-efi.img.gz
+            iStoreOS-efi.img.gz.sha256
           retention-days: 14
 
       - name: 发布 Release
         if: ${{ inputs.make_release }}
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: slim-${{ github.run_number }}
+          tag_name: build-${{ github.run_number }}
           name: iStoreOS 精简版 #${{ github.run_number }}
           body: |
             从官方镜像自动精简而来。
@@ -95,5 +95,5 @@ jobs:
             **刷写方法**：系统 → 备份/刷写固件，选这个 `img.gz`（在线升级，配置与已装插件都会保留）。
             新装机用 balenaEtcher 或 `gunzip -c xxx.img.gz | sudo dd of=/dev/sdX bs=4M conv=fsync`。
           files: |
-            iStoreOS-slim-efi.img.gz
-            iStoreOS-slim-efi.img.gz.sha256
+            iStoreOS-efi.img.gz
+            iStoreOS-efi.img.gz.sha256

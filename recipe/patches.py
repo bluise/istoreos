@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-istoreos-slim / patches.py
+istoreos / recipe/patches.py
 ==========================
 把"官方 iStoreOS rootfs"改成"精简版"所需的所有文件级改动。
 每个改动都带断言：锚点找不到就报错退出，绝不静默跳过（上游改版时能立刻发现）。
