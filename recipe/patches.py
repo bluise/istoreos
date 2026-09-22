@@ -259,9 +259,45 @@ def patch_openclash(root):
     os.makedirs(os.path.join(root, "etc/openclash/core"), exist_ok=True)
 
 
+
+# ---------------------------------------------------------------------------
+# 7) OTA 在线升级指向本项目仓库
+#    /lib/upgrade/ota.sh 里原本写死 fw0.koolcenter.com（官方完整镜像），
+#    误点 OTA 会把精简版刷回官方全家桶。改成指向本仓库 Release 后：
+#      - 误点也只会刷到本项目自己产出的固件（由工作流同步发布 OTA 清单文件）
+#      - 拿不到 GitHub 时只会报错，不会刷到官方镜像
+#    这里用 required=True：万一上游改写了这个文件，构建要立刻失败，避免"以为改了其实没改"。
+# ---------------------------------------------------------------------------
+OTA_URL_BASE = "https://github.com/bluise/istoreos/releases/latest/download"
+
+
+def patch_ota(root):
+    f = os.path.join(root, "lib/upgrade/ota.sh")
+    if not os.path.exists(f):
+        FAIL.append("找不到 /lib/upgrade/ota.sh")
+        return
+    s = _read(f)
+    n = 0
+    out = []
+    for line in s.split("\n"):
+        if "OTA_URL_BASE=" in line and "koolcenter.com" in line:
+            indent = line[:len(line) - len(line.lstrip())]
+            var = "export -n " if "export -n" in line else ""
+            out.append('%s%sOTA_URL_BASE="%s"' % (indent, var, OTA_URL_BASE))
+            n += 1
+        else:
+            out.append(line)
+    if n == 0:
+        FAIL.append("/lib/upgrade/ota.sh 里没找到 OTA_URL_BASE=...koolcenter.com 那几行")
+        return
+    _write(f, "\n".join(out))
+    print("  OTA 地址已指向本仓库 Release（改了 %d 行）" % n)
+
+
 # ---------------------------------------------------------------------------
 def patch_all(root, files_dir, oaf_v7=False):
     patch_smartd_conf(root)
+    patch_ota(root)
     patch_quickstart_spa(root, oaf_v7=oaf_v7)
     patch_luci(root)
     patch_theme(root)

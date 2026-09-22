@@ -70,6 +70,18 @@ jobs:
           eval python3 recipe/build.py $ARGS
           ls -lh iStoreOS-efi.img.gz*
 
+      - name: 生成 OTA 清单（让设备上的 OTA 指向本仓库）
+        run: |
+          set -e
+          VER=$(basename "${{ inputs.upstream_url }}" | sed -nE 's/^istoreos-([0-9.]+)-([0-9]+)-.*/\1-\2/p')
+          [ -n "$VER" ] || VER="unknown-$(date +%Y%m%d)"
+          IMG=iStoreOS-efi.img.gz
+          SHA=$(cut -d' ' -f1 $IMG.sha256)
+          printf '[%s](%s)\nSHA256: %s\n' "$VER" "$IMG" "$SHA" > version.latest.v2
+          printf '%s\n' "$VER" > version.index.v2
+          echo "--- version.latest.v2 ---"; cat version.latest.v2
+          echo "--- version.index.v2 ---"; cat version.index.v2
+
       - name: 上传构建产物
         uses: actions/upload-artifact@v4
         with:
@@ -77,6 +89,8 @@ jobs:
           path: |
             iStoreOS-efi.img.gz
             iStoreOS-efi.img.gz.sha256
+            version.latest.v2
+            version.index.v2
           retention-days: 14
 
       - name: 发布 Release
@@ -97,3 +111,5 @@ jobs:
           files: |
             iStoreOS-efi.img.gz
             iStoreOS-efi.img.gz.sha256
+            version.latest.v2
+            version.index.v2

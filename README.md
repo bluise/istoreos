@@ -90,7 +90,23 @@ python3 recipe/build.py \
 
 ---
 
-## 五、注意点（踩过的坑）
+## 五、OTA 在线升级已指向本仓库
+
+`/lib/upgrade/ota.sh` 原本把在线升级指向官方的 `fw0.koolcenter.com`（那是**官方完整镜像**，
+误点一下就把精简版刷没了）。本配方会把它改成指向本仓库：
+
+    https://github.com/bluise/istoreos/releases/latest/download
+
+工作流每次构建还会额外发布两个 OTA 清单文件，这样设备上的「系统 → OTA」检查到的就是本项目的
+固件（文件名 + sha256 都对得上）：
+
+- `version.latest.v2` —— 第 1 行 `[版本](镜像文件名)`，后面一行 `SHA256: <校验和>`
+- `version.index.v2` —— 版本号列表
+
+效果：**误点 OTA 也只会刷本项目自己产出的固件**；如果设备取不到 GitHub，OTA 只会报错，
+不会刷到官方镜像。想手动刷还是走「系统 → 备份/刷写固件」。
+
+## 六、注意点（踩过的坑）
 
 1. **不要用 `apk del` 手删某些包**：`apk del` 会级联删除依赖它的包。例如 `quickstart`
    声明依赖 `mdadm`/`smartd`/`smartmontools`，直接 `apk del` 会把 `quickstart` 一起删掉
@@ -107,7 +123,7 @@ python3 recipe/build.py \
 
 ---
 
-## 六、已验证
+## 七、已验证
 
 本仓库的工作流已实际跑通并验证（2026-09-22）：
 
@@ -120,7 +136,7 @@ python3 recipe/build.py \
   - 磁盘管理 200、OAF 页面 200（OAF 已升到 v7.0.1）、主题只剩 Argon
   - 菜单里 WireGuard / 异地组网 / 网络唤醒 / CIFS 挂载 / ddns-scripts 均为 0 处
 
-## 七、当前已验证的成品
+## 八、当前已验证的成品
 
 - `iStoreOS-25.12.5-x86_64-slim-efi.img.gz`（约 63 MB，官方 232 MB）
 - 实测（KVM 虚拟机真跑）：能启动、首页磁盘信息正常、DDNS-GO 首启即在运行（9876 可访问）、
