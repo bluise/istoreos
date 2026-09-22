@@ -130,6 +130,18 @@ def parse_db(path):
     return pkgs
 
 
+def remove_one(root, pkg):
+    """只摘掉一个包的数据库记录（文件由随后的安装覆盖）。"""
+    db = os.path.join(root, "lib/apk/db/installed")
+    blocks = [b for b in open(db, encoding="utf-8", errors="surrogateescape").read().split("\n\n") if b.strip()]
+    keep = [b for b in blocks if ("\nP:%s\n" % pkg) not in "\n" + b + "\n"]
+    if len(keep) == len(blocks):
+        return False
+    with open(db, "w", encoding="utf-8", errors="surrogateescape") as fh:
+        fh.write("\n\n".join(keep) + "\n")
+    return True
+
+
 def remove_packages(root, listfile):
     db = os.path.join(root, "lib/apk/db/installed")
     pkgs = parse_db(db)
@@ -299,8 +311,12 @@ def stage_extras(root, args, work):
             try:
                 apk(root, ["add"] + files, extra_repos=repos)
             except subprocess.CalledProcessError:
-                print("  ! 整组装失败，改用 --force-overwrite 重试")
-                apk(root, ["add", "--force-overwrite"] + files, extra_repos=repos)
+                # apk3 没有 --force-overwrite：先摘掉旧 OAF 的 4 个包记录再装新版本
+                print("  ! 整组装失败，改为先移除旧 OAF 记录再安装")
+                for old in ("luci-i18n-oaf-zh-cn", "luci-app-oaf", "kmod-oaf", "appfilter"):
+                    if not remove_one(root, old):
+                        pass
+                apk(root, ["add"] + files, extra_repos=repos)
             args._oaf_v7 = True
     # DDNS-GO 二进制
     if args.ddns_go_tar:
