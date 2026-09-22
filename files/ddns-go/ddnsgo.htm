@@ -1,0 +1,98 @@
+<%#
+ DDNS-GO 的 LuCI 页面 (服务 -> DDNS-GO)
+ 只做三件事: 显示服务状态 / 启停重启 / 打开 DDNS-GO 自带的网页配置界面(9876)。
+ 配置本身(域名、服务商、密钥)都在 DDNS-GO 自己的中文网页界面里完成。
+-%>
+
+<%+header%>
+
+<%
+local http = require "luci.http"
+local sys  = require "luci.sys"
+local uci  = require "luci.model.uci".cursor()
+local disp = require "luci.dispatcher"
+
+local token = disp.context.authtoken or ""
+
+-- 启停操作: 直接调 init 脚本(LuCI 的 Lua 视图以 root 身份运行)
+local action = http.formvalue("action")
+local note = nil
+if action == "start" then
+	sys.call("/etc/init.d/ddns-go start >/dev/null 2>&1")
+	note = "已发送启动命令"
+elseif action == "stop" then
+	sys.call("/etc/init.d/ddns-go stop >/dev/null 2>&1")
+	note = "已发送停止命令"
+elseif action == "restart" then
+	sys.call("/etc/init.d/ddns-go restart >/dev/null 2>&1")
+	note = "已发送重启命令"
+end
+
+local enabled = uci:get("ddns-go", "main", "enabled")
+if enabled == nil then enabled = "1" end
+local port = uci:get("ddns-go", "main", "port") or "9876"
+local freq = uci:get("ddns-go", "main", "frequency") or "300"
+
+local installed = sys.call("test -x /usr/bin/ddns-go") == 0
+
+local pid = sys.exec("pidof ddns-go 2>/dev/null | head -n1") or ""
+pid = pid:gsub("%s+", "")
+local running = (pid ~= "")
+
+-- 拼出网页配置界面的地址(用浏览器请求 LuCI 时用的主机名)
+local host = http.getenv("SERVER_NAME") or ""
+if host == "" then host = http.getenv("SERVER_ADDR") or "" end
+if host == "" or host == "localhost" then host = "10.0.0.1" end
+local url = "http://" .. host .. ":" .. port
+%>
+
+<h2 name="content">DDNS-GO 动态域名解析</h2>
+
+<div class="cbi-map">
+	<div class="cbi-map-descr">
+		DDNS-GO 会把本机的公网 IP 自动更新到你的域名服务商
+		(阿里云 / 腾讯云 / DNSPod / Cloudflare / GoDaddy / Namecheap 等)。
+		第一次使用请点下面的“打开配置页面”，在它自带的中文界面里设置用户名密码并添加域名。
+	</div>
+
+	<% if note then %>
+	<div class="alert-message success"><%=note%></div>
+	<% end %>
+
+	<% if not installed then %>
+	<div class="alert-message warning">
+		没有找到 /usr/bin/ddns-go。请确认烧录的是本仓库构建的固件(二进制由构建流程打包进去)。
+	</div>
+	<% end %>
+
+	<fieldset class="cbi-section">
+		<legend>运行状态</legend>
+		<table class="table">
+			<tr>
+				<td width="30%">服务状态</td>
+				<td>
+					<% if running then %>
+						<span style="color:#0a0;font-weight:bold">运行中</span>
+						<span style="color:#666">(PID <%=pid%>)</span>
+					<% else %>
+						<span style="color:#c00;font-weight:bold">已停止</span>
+					<% end %>
+				</td>
+			</tr>
+			<tr><td>开机自启</td><td><% if enabled == "1" then %>已启用<% else %>未启用(<code>uci set ddns-go.main.enabled=1</code> 可打开)<% end %></td></tr>
+			<tr><td>检查频率</td><td>每 <%=freq%> 秒检查一次公网 IP</td></tr>
+			<tr><td>配置页面</td><td><a href="<%=url%>" target="_blank" rel="noreferrer"><%=url%></a></td></tr>
+			<tr><td>配置文件</td><td><code>/etc/ddns-go/config.yaml</code>(由网页界面写入)</td></tr>
+		</table>
+	</fieldset>
+
+	<form method="post" action="">
+		<input type="hidden" name="token" value="<%=token%>" />
+		<button class="cbi-button cbi-button-apply" type="submit" name="action" value="restart">重启服务</button>
+		<button class="cbi-button cbi-button-reset" type="submit" name="action" value="stop">停止服务</button>
+		<button class="cbi-button cbi-button-apply" type="submit" name="action" value="start">启动服务</button>
+		<a class="cbi-button" href="<%=url%>" target="_blank" rel="noreferrer">打开配置页面</a>
+	</form>
+</div>
+
+<%+footer%>

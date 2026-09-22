@@ -1,0 +1,18 @@
+{
+	"luci-app-ddns-go": {
+		"description": "Grant access to DDNS-GO (status page under Services -> DDNS-GO)",
+		"read": {
+			"uci": [ "ddns-go" ],
+			"file": {
+				"/etc/ddns-go/config.yaml": [ "read" ],
+				"/usr/bin/ddns-go": [ "read" ]
+			}
+		},
+		"write": {
+			"uci": [ "ddns-go" ],
+			"file": {
+				"/etc/init.d/ddns-go": [ "exec" ]
+			}
+		}
+	}
+}

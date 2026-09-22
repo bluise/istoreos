@@ -1,0 +1,17 @@
+# 精简版额外补装的包（官方镜像里没有/需要升级的）
+# 其中 ruby 系列用于 OpenClash 处理 yaml；kmod-sdhci/kmod-mwifiex-sdio/
+# mwifiex-sdio-firmware 是 Dell Wyse 3040 的 SDIO 无线支持
+kmod-mwifiex-sdio
+kmod-sdhci
+libruby3.4
+libyaml
+mwifiex-sdio-firmware
+ruby
+ruby-bigdecimal
+ruby-date
+ruby-digest
+ruby-enc
+ruby-pstore
+ruby-psych
+ruby-stringio
+ruby-yaml

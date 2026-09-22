@@ -1,0 +1,13 @@
+#!/bin/sh
+# 首次启动: 准备 DDNS-GO 的配置目录并让它开机自启
+# (二进制由构建流程从 jeessy2/ddns-go 官方 release 放进 /usr/bin/ddns-go;
+#  LuCI 页面在 "服务 -> DDNS-GO", 网页配置界面在 http://路由器IP:9876)
+mkdir -p /etc/ddns-go
+[ -f /etc/ddns-go/config.yaml ] || : > /etc/ddns-go/config.yaml
+
+# 二进制在的话就启用; 不在(比如被人手动删了)就跳过, 避免开机反复重启失败
+if [ -x /usr/bin/ddns-go ]; then
+	/etc/init.d/ddns-go enable 2>/dev/null || true
+fi
+
+exit 0

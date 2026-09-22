@@ -1,0 +1,6 @@
+config ddns-go 'main'
+	option enabled '1'
+	# DDNS-GO 的网页配置界面端口(浏览器访问 http://路由器IP:9876)
+	option port '9876'
+	# 多久检查一次公网 IP 变化(秒)
+	option frequency '300'

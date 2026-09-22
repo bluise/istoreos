@@ -1,0 +1,99 @@
+name: 构建 iStoreOS 精简版镜像
+
+# 上游出新版时：改一下 upstream_url 指向新的官方镜像，然后点 Run workflow。
+# 工作流会自动：下载官方镜像 → 删掉不需要的包 → 装回你要的插件（DDNS-GO / OpenClash）
+# → 应用界面精简补丁 → 重打包 → 产出新的精简 img.gz（并发布到 Release）。
+on:
+  workflow_dispatch:
+    inputs:
+      upstream_url:
+        description: '官方镜像 img.gz 的完整 URL（上游出新版时换成新链接）'
+        required: true
+        default: 'https://fw.koolcenter.com/iStoreOS/x86_64_efi/istoreos-25.12.5-2026091113-x86-64-squashfs-combined-efi.img.gz'
+      openclash_version:
+        description: 'OpenClash 版本（上游 vernesong/OpenClash）'
+        required: true
+        default: '0.47.156'
+      ddns_go_version:
+        description: 'DDNS-GO 版本（上游 jeessy2/ddns-go）'
+        required: true
+        default: '6.17.7'
+      use_oaf_v7:
+        description: '把 OAF 升级到 v7（内核不匹配会自动跳过）'
+        type: boolean
+        default: true
+      make_release:
+        description: '构建成功后创建 Release（否则只上传 artifact）'
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - name: 取出仓库
+        uses: actions/checkout@v4
+
+      - name: 安装依赖
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y squashfs-tools pigz curl python3
+
+      - name: 下载 OpenClash（官方 release 的真 apk 包）
+        run: |
+          set -e
+          V="${{ inputs.openclash_version }}"
+          U="https://github.com/vernesong/OpenClash/releases/download/v$V/luci-app-openclash-$V.apk"
+          curl -fSL --retry 3 -o openclash.apk "$U" || curl -fSL --retry 3 -o openclash.apk "https://ghfast.top/$U"
+          ls -l openclash.apk
+          echo -n "包格式(magic 应为 ADBd): "; od -An -c -N4 openclash.apk | tr -s ' '
+
+      - name: 下载 DDNS-GO（官方静态二进制）
+        run: |
+          set -e
+          V="${{ inputs.ddns_go_version }}"
+          U="https://github.com/jeessy2/ddns-go/releases/download/v$V/ddns-go_${V}_linux_x86_64.tar.gz"
+          curl -fSL --retry 3 -o ddns-go.tar.gz "$U" || curl -fSL --retry 3 -o ddns-go.tar.gz "https://ghfast.top/$U"
+          tar tzf ddns-go.tar.gz
+
+      - name: 构建精简镜像
+        run: |
+          set -e
+          ARGS="--upstream-url '${{ inputs.upstream_url }}'"
+          ARGS="$ARGS --out iStoreOS-slim-efi.img.gz --work $RUNNER_TEMP/slim"
+          ARGS="$ARGS --openclash-apk openclash.apk --ddns-go-tar ddns-go.tar.gz"
+          if [ "${{ inputs.use_oaf_v7 }}" = "true" ]; then ARGS="$ARGS --oaf-dir files/oaf"; fi
+          eval python3 slim/slim.py $ARGS
+          ls -lh iStoreOS-slim-efi.img.gz*
+
+      - name: 上传构建产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: iStoreOS-slim-efi
+          path: |
+            iStoreOS-slim-efi.img.gz
+            iStoreOS-slim-efi.img.gz.sha256
+          retention-days: 14
+
+      - name: 发布 Release
+        if: ${{ inputs.make_release }}
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: slim-${{ github.run_number }}
+          name: iStoreOS 精简版 #${{ github.run_number }}
+          body: |
+            从官方镜像自动精简而来。
+
+            - 上游镜像: ${{ inputs.upstream_url }}
+            - OpenClash: ${{ inputs.openclash_version }}
+            - DDNS-GO: ${{ inputs.ddns_go_version }}
+
+            **刷写方法**：系统 → 备份/刷写固件，选这个 `img.gz`（在线升级，配置与已装插件都会保留）。
+            新装机用 balenaEtcher 或 `gunzip -c xxx.img.gz | sudo dd of=/dev/sdX bs=4M conv=fsync`。
+          files: |
+            iStoreOS-slim-efi.img.gz
+            iStoreOS-slim-efi.img.gz.sha256

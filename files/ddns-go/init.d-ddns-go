@@ -1,0 +1,68 @@
+#!/bin/sh /etc/rc.common
+# =============================================
+# DDNS-GO 服务 (procd)
+# ---------------------------------------------
+# DDNS-GO 是一个把本机公网 IP 自动更新到域名服务商的工具
+# (阿里云/腾讯云/DNSPod/CloudWatch/GoDaddy/Namecheap/Cloudflare ...),
+# 自带网页配置界面(默认 9876 端口, 中文界面)。
+#
+# 二进制放在 /usr/bin/ddns-go(构建时从 jeessy2/ddns-go 的官方 release 取
+# linux_x86_64 静态包放进去的, 固件里不带源码也不联网下载)。
+#
+# 配置文件: /etc/ddns-go/config.yaml  (由 DDNS-GO 网页界面自己写入)
+# 参数:     uci show ddns-go     (端口 / 检查频率 / 是否开机自启)
+# =============================================
+
+START=95
+STOP=10
+USE_PROCD=1
+
+PROG=/usr/bin/ddns-go
+CONF_DIR=/etc/ddns-go
+CONF=$CONF_DIR/config.yaml
+
+start_service() {
+	local enabled port freq
+
+	config_load ddns-go
+	config_get_bool enabled main enabled 1
+	[ "$enabled" = "1" ] || {
+		logger -t ddns-go "disabled in /etc/config/ddns-go, not starting"
+		return 0
+	}
+
+	config_get port main port 9876
+	config_get freq main frequency 300
+
+	# 二进制不在就直接说清楚(比如手动删过), 别让 procd 反复重启
+	if [ ! -x "$PROG" ]; then
+		logger -t ddns-go "error: $PROG not found or not executable"
+		return 1
+	fi
+
+	mkdir -p "$CONF_DIR"
+	[ -f "$CONF" ] || : > "$CONF"
+
+	logger -t ddns-go "starting: listen=:$port freq=${freq}s conf=$CONF"
+
+	procd_open_instance
+	# 用数字端口(0.0.0.0), 只监听本机 LAN 也能访问
+	procd_set_param command "$PROG" -c "$CONF" -l ":$port" -f "$freq"
+	procd_set_param respawn 3600 5 5
+	procd_set_param stdout 1
+	procd_set_param stderr 1
+	procd_close_instance
+}
+
+stop_service() {
+	logger -t ddns-go "stopping"
+}
+
+reload_service() {
+	stop
+	start
+}
+
+service_triggers() {
+	procd_add_reload_trigger "ddns-go"
+}
