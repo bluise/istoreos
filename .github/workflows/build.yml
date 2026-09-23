@@ -64,8 +64,10 @@ jobs:
         run: |
           set -u
           UP=""; CUR=""
-          UP=$(curl -fsSL --retry 3 "$OFFICIAL_OTA_BASE/version.latest.v2" 2>/dev/null | head -1) || true
-          URL=$(gh release view --json assets -q '.assets[] | select(.name=="version.latest.v2") | .url' 2>/dev/null) || true
+          # 官方清单第一行形如 [25.12.5-2026091113](istoreos-....img.gz)
+          UP=$(curl -fsSL --retry 3 "$OFFICIAL_OTA_BASE/version.latest.v2" 2>/dev/null | head -1 \
+               | sed -nE 's/^\[([^]]+)\].*/\1/p') || true
+          URL=$(gh release view --json assets -q '.assets[] | select(.name=="upstream.ver") | .url' 2>/dev/null) || true
           if [ -n "$URL" ]; then
             CUR=$(gh api "$URL" -H "Accept: application/octet-stream" 2>/dev/null | head -1) || true
           fi
@@ -114,6 +116,10 @@ jobs:
         id: build
         run: |
           set -e
+          # 版本号尾段：写进固件、同时用于 OTA 清单，每次构建都不一样，
+          # 设备上的「系统 -> OTA」才会看到"有新版本"
+          STAMP=$(date -u +%Y%m%d%H%M)
+          echo "STAMP=$STAMP" >> "$GITHUB_ENV"
           if [ -n "${{ inputs.upstream_url }}" ]; then
             ARGS="--upstream-url '${{ inputs.upstream_url }}'"
           else
@@ -121,6 +127,7 @@ jobs:
           fi
           ARGS="$ARGS --out iStoreOS-efi.img.gz --work $RUNNER_TEMP/slim"
           ARGS="$ARGS --openclash-apk openclash.apk --ddns-go-tar ddns-go.tar.gz"
+          ARGS="$ARGS --build-stamp $STAMP"
           if [ "$USE_OAF_V7" = "true" ]; then ARGS="$ARGS --oaf-dir files/oaf"; fi
           eval python3 recipe/build.py $ARGS
           ls -lh iStoreOS-efi.img.gz*
@@ -129,18 +136,23 @@ jobs:
       - name: 生成 OTA 清单（让设备上的 OTA 指向本仓库）
         run: |
           set -e
+          # 上游版本（设备上原来的版本就是它，用来让检查逻辑停下）
           if [ -f upstream.name ]; then
-            VER=$(sed -nE 's/^istoreos-([0-9.]+)-([0-9]+)-.*/\1-\2/p' upstream.name)
+            UP=$(sed -nE 's/^istoreos-([0-9.]+)-([0-9]+)-.*/\1-\2/p' upstream.name)
           else
-            VER=$(basename "${{ inputs.upstream_url }}" | sed -nE 's/^istoreos-([0-9.]+)-([0-9]+)-.*/\1-\2/p')
+            UP=$(basename "${{ inputs.upstream_url }}" | sed -nE 's/^istoreos-([0-9.]+)-([0-9]+)-.*/\1-\2/p')
           fi
-          [ -n "$VER" ] || VER="unknown-$(date +%Y%m%d)"
+          [ -n "$UP" ] || UP="unknown-$(date +%Y%m%d)"
+          REL="${UP%-*}"                       # 25.12.5（上游换版本时自动跟着变）
+          VER="$REL-$STAMP"
           IMG=iStoreOS-efi.img.gz
           SHA=$(cut -d' ' -f1 $IMG.sha256)
           printf '[%s](%s)\nSHA256: %s\n' "$VER" "$IMG" "$SHA" > version.latest.v2
-          printf '%s\n' "$VER" > version.index.v2
+          { echo "$VER"; [ "$UP" = "$VER" ] || echo "$UP"; } > version.index.v2
+          printf '%s\n' "$UP" > upstream.ver
           echo "--- version.latest.v2 ---"; cat version.latest.v2
           echo "--- version.index.v2 ---"; cat version.index.v2
+          echo "--- upstream.ver ---"; cat upstream.ver
 
       - name: 上传构建产物
         uses: actions/upload-artifact@v4
@@ -151,6 +163,7 @@ jobs:
             iStoreOS-efi.img.gz.sha256
             version.latest.v2
             version.index.v2
+            upstream.ver
           retention-days: 14
 
       - name: 发布 Release
@@ -174,6 +187,7 @@ jobs:
             iStoreOS-efi.img.gz.sha256
             version.latest.v2
             version.index.v2
+            upstream.ver
 
       - name: 只保留最新一个 Release
         if: ${{ env.MAKE_RELEASE == 'true' }}

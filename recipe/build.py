@@ -485,6 +485,8 @@ def main():
     ap.add_argument("--ensure-luci-compat", action="store_true", default=True)
     ap.add_argument("--rewrite-mirror", action="store_true", default=True,
                     help="把镜像内的 apk 源改写为 downloads.openwrt.org（CI 用）")
+    ap.add_argument("--build-stamp", default="",
+                    help="写进固件里的版本号尾段（OTA 靠它判断有没有新版），如 202609231030")
     ap.add_argument("--keep-raw", action="store_true")
     args = ap.parse_args()
 
@@ -543,7 +545,8 @@ def main():
 
     print("[5/6] 应用补丁")
     patches.patch_all(root, os.path.join(os.path.dirname(HERE), "files"),
-                      oaf_v7=getattr(args, "_oaf_v7", False))
+                      oaf_v7=getattr(args, "_oaf_v7", False),
+                      build_stamp=args.build_stamp)
 
     print("[6/6] 重打包")
     mksquash(root, new_sqfs)

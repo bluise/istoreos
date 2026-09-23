@@ -338,7 +338,32 @@ def patch_network(root, files_dir):
 
 
 # ---------------------------------------------------------------------------
-def patch_all(root, files_dir, oaf_v7=False):
+# ---------------------------------------------------------------------------
+# 9) 版本号尾段：写进固件里的 DISTRIB_REVISION / BUILD_ID
+#    设备上的 OTA(/bin/ota) 会拼出 DISTRIB_RELEASE-DISTRIB_REVISION 与
+#    Release 里的 version.latest.v2 比对，所以每次构建换一个尾段，设备才会看到"有新版本"。
+# ---------------------------------------------------------------------------
+def patch_version_stamp(root, stamp):
+    if not stamp:
+        return
+    f = os.path.join(root, "etc/openwrt_release")
+    if os.path.exists(f):
+        s = _read(f)
+        s = re.sub(r"DISTRIB_REVISION='[^']*'", "DISTRIB_REVISION='%s'" % stamp, s, count=1)
+        s = re.sub(r"DISTRIB_DESCRIPTION='iStoreOS ([0-9.]+)[^']*'",
+                   lambda m: "DISTRIB_DESCRIPTION='iStoreOS %s %s'" % (m.group(1), stamp), s, count=1)
+        _write(f, s)
+    f = os.path.join(root, "usr/lib/os-release")
+    if os.path.exists(f):
+        s = _read(f)
+        s = re.sub(r'BUILD_ID="[^"]*"', 'BUILD_ID="%s"' % stamp, s, count=1)
+        s = re.sub(r'OPENWRT_RELEASE="iStoreOS ([0-9.]+)[^"]*"',
+                   lambda m: 'OPENWRT_RELEASE="iStoreOS %s %s"' % (m.group(1), stamp), s, count=1)
+        _write(f, s)
+    print("  版本号尾段已写入固件: %s" % stamp)
+
+
+def patch_all(root, files_dir, oaf_v7=False, build_stamp=""):
     patch_smartd_conf(root)
     patch_ota(root)
     patch_network(root, files_dir)
@@ -347,6 +372,7 @@ def patch_all(root, files_dir, oaf_v7=False):
     patch_theme(root)
     patch_ddns_go(root, files_dir)
     patch_openclash(root)
+    patch_version_stamp(root, build_stamp)
     if FAIL:
         print("✗ 补丁阶段有 %d 处失败:" % len(FAIL))
         for x in FAIL:
