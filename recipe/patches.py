@@ -258,6 +258,26 @@ def patch_openclash(root):
         _write(cfg, s)
     os.makedirs(os.path.join(root, "etc/openclash/core"), exist_ok=True)
 
+    # ★ 补上开机自启软链。
+    # 我们装 apk 时带了 --no-scripts（CI 里非 root，post-install 脚本会失败），
+    # 而 OpenClash 的 post-install 里那句 "/etc/init.d/openclash enable" 正好被跳过，
+    # 于是 /etc/rc.d/S99openclash 不存在 —— 开机根本不启动 OpenClash。
+    # 现象：开机后内核进程没有、7874 不监听、/tmp/openclash.log 不存在，
+    #       但上次手动启停留下的 DNS 劫持(把 dnsmasq 指到 127.0.0.1#7874)还在，
+    #       dnsmasq 解析失败 -> 首页显示「DNS 错误」；手动关一次再开就正常。
+    init = os.path.join(root, "etc/init.d/openclash")
+    if not os.path.exists(init):
+        FAIL.append("没找到 /etc/init.d/openclash（OpenClash 没装上？）")
+        return
+    rcd = os.path.join(root, "etc/rc.d")
+    os.makedirs(rcd, exist_ok=True)
+    for link_name in ("S99openclash", "K15openclash"):   # 与 init 里的 START=99 / STOP=15 对应
+        link = os.path.join(rcd, link_name)
+        if os.path.lexists(link):
+            os.unlink(link)
+        os.symlink("../init.d/openclash", link)
+    print("  已补上 OpenClash 开机自启软链 S99openclash / K15openclash")
+
 
 
 # ---------------------------------------------------------------------------
