@@ -1,75 +1,73 @@
 # iStoreOS 精简版（自动构建）
 
-把**官方 iStoreOS x86_64 镜像**自动变成「精简版」：体积从 ~232 MB 降到 ~63 MB，
-去掉用不到的包，装回真正要用的插件，并把几处界面做精简。
+把**官方 iStoreOS x86_64 镜像**自动做成「精简版」：232 MB -> 62 MB，删掉用不到的包，
+补回要用的插件，只做少量界面调整。内核、iStoreOS 应用、升级机制都是官方原装（不是源码编译）。
 
-上游出新版时：**改一下工作流里的 `upstream_url`，点一下 Run workflow**，就能拿到新的精简镜像，
-不需要重新编译，也不用重新刷机（用网页在线升级即可）。
+适用范围：x86_64 软路由 / 小主机（含 Dell Wyse 3040 这类瘦客户机，已补 SDIO 无线驱动）。
 
----
-
-## 一、怎么用（上游更新时）
-
-1. 打开本仓库 → **Actions** → 左侧 **构建 iStoreOS 精简版镜像** → 右侧 **Run workflow**
-2. 填参数：
-   | 参数 | 说明 |
-   |---|---|
-   | `upstream_url` | 官方新镜像的完整 URL（在 koolcenter 下载页复制；默认是当前 25.12.5 那条） |
-   | `openclash_version` | OpenClash 版本，默认 `0.47.156`（上游 vernesong/OpenClash） |
-   | `ddns_go_version` | DDNS-GO 版本，默认 `6.17.7`（上游 jeessy2/ddns-go） |
-   | `use_oaf_v7` | 是否把 OAF 升到 v7（默认开；内核版本不匹配会自动跳过） |
-   | `make_release` | 构建成功后自动发布 Release（默认开） |
-3. 等 10~20 分钟 → 到 **Releases** 下载 `iStoreOS-efi.img.gz`
-4. **刷机（在线升级，不用 U 盘）**：
-   系统 → **备份/刷写固件** → 选这个 `img.gz` → 刷写 → 自动重启
-   - 只重写引导分区 + rootfs，**overlay 分区不动** → 配置和你在应用商店装的插件都保留
-   - ⚠️ 不要点「系统 → OTA」那个按钮：它下的是**官方完整镜像**，会把这些精简全部冲掉
-5. 全新装机（空盘）：`gunzip -c iStoreOS-efi.img.gz | sudo dd of=/dev/sdX bs=4M conv=fsync`
-   或直接用 balenaEtcher 写这个 img.gz
+最新固件：**Releases** 里的 `iStoreOS-efi.img.gz`（带 sha256，构建完自动发布，只保留最新一版）。
 
 ---
 
-## 二、精简了什么
+## 一、包含的插件与功能
 
-- **删掉 330 个包**（Docker 全家桶、GPU 显卡固件与驱动、NAS 服务端 Samba/NFS/WebDAV、
-  无关无线/网卡固件、易有云 linkease/ddnsto、Perl 运行库、4G 模组、luci-theme-bootstrap、
-  ddns-scripts 系列、mdadm+smartmontools 系列、WireGuard 界面、unet 异地组网、
-  网络唤醒 WOL、CIFS 网络共享挂载 等）
-  完整清单与逐项原因：`recipe/remove-packages.txt`（本仓库文档里也有详细版）
-- **额外装回来**（`recipe/extra-packages.txt`）：
-  | 内容 | 用途 |
-  |---|---|
-  | DDNS-GO v6.17.7（静态二进制 + LuCI 页面 + 9876 网页界面 + 开机自启） | 动态域名 |
-  | OpenClash 0.47.156（界面 + 规则数据 GeoSite.dat/Country.mmdb + ruby 依赖） | 透明代理（**不含内核**，首次使用在页面里下） |
-  | ruby + ruby-yaml 等 | OpenClash 处理 yaml 用 |
-  | `kmod-sdhci` / `kmod-mwifiex-sdio` / `mwifiex-sdio-firmware` | Dell Wyse 3040 的 SDIO 无线 |
-  | OAF v7（appfilter / kmod-oaf / luci-app-oaf / i18n，可选） | 应用过滤、家长控制 |
-- **界面精简**（`recipe/patches.py`，每处都带断言，上游改版会立刻报错）：
-  - 首页去掉 4 张卡片：存储服务、下载服务、远程域名、配置模块
-  - 首页「文件管理」旁 ⋮ 菜单去掉 RAID管理 / S.M.A.R.T.
-  - 「系统 → Argon主题设置」改名「主题设置」；只保留 Argon 主题
-  - 「网络存储」下不再显示 磁盘阵列 / S.M.A.R.T.；服务菜单 UPnP 标题改短为 `UPnP IGD`
-  - 补回 `/etc/smartd.conf`（iStoreOS 首页的守护进程要读它，缺了首页"磁盘信息"会整块空白）
-  - 磁盘管理去掉对 smartctl 的强制依赖（否则删掉 SMART 工具后整个磁盘管理页都不注册）
-  - 首页「家长控制」链接跟随 OAF 版本（v7 用 `/services/oaf`，v6 保持原样）
+| 内容 | 说明 |
+|---|---|
+| DDNS-GO 6.17.7 | 静态二进制 + LuCI 页面 + 9876 独立网页界面，首启自动运行 |
+| OpenClash 0.47.156 | 界面 + 依赖(ruby) + 规则数据(GeoSite.dat / Country.mmdb)；**不含内核**，首次使用在页面里自己下 |
+| OAF v7.0.1 | 应用过滤 / 家长控制（appfilter / kmod-oaf / luci-app-oaf / 中文包）；kmod 与内核 6.12.94 绑定，内核不匹配时自动跳过 |
+| Wyse 3040 无线 | kmod-sdhci / kmod-mwifiex-sdio / mwifiex-sdio-firmware |
+| 主题 | 只保留 Argon（light） |
 
----
+官方原有能力全部保留：首页(quickstart)、网络向导、防火墙、DHCP/DNS、应用商店、
+磁盘管理、UPnP、PassWall2、TTYD、CPU 调频、备份/刷写、在线升级。
 
-## 三、仓库结构
+## 二、去掉了什么
 
-```
-.github/workflows/build.yml   工作流：下载官方镜像 + 插件 → 跑配方 → 出镜像 → 发 Release
-recipe/build.py                 主流程：解包 → 删包 → 补装 → 打补丁 → 重打包 → 自检
-recipe/patches.py              所有界面/配置补丁（带断言，改不上就报错）
-recipe/remove-packages.txt     要删的 330 个包（相对官方镜像）
-recipe/extra-packages.txt      要补装的包
-files/ddns-go/*              DDNS-GO 的 LuCI 集成文件（init.d / config / uci-defaults / 控制器 / 页面 / ACL）
-files/oaf/*                  OAF v7 的 4 个 apk（内核不匹配时自动跳过）
-```
+删掉 **330 个包**（完整清单 `recipe/remove-packages.txt`，逐项说明见发布目录的 `精简清单.txt`），
+主要是：Docker 全家桶、NAS 服务端（Samba/NFS/WebDAV）、Perl、4G 模组、GPU 与无关网卡固件、
+易有云 linkease/ddnsto、ddns-scripts 系列、mdadm + smartmontools、WireGuard 界面、
+异地组网 unet、网络唤醒 WOL、CIFS 挂载、luci-theme-bootstrap 等。
 
----
+## 三、界面调整
 
-## 四、本地怎么跑（不想用 Actions 时）
+- 首页去掉 4 张卡片：存储服务、下载服务、远程域名、配置模块
+- 首页「文件管理」⋮ 菜单去掉 RAID管理 / S.M.A.R.T.；「网络存储」下也不再显示这两项
+- 「系统 → Argon主题设置」改名「系统 → 主题设置」；「服务 → UPnP」标题改为 `UPnP IGD`
+- 首页「家长控制」链接跟随 OAF 版本自动适配
+- 保留最小 `/etc/smartd.conf`：首页磁盘信息要读它（SMART 功能本身已删）
+
+## 四、默认网络
+
+- LAN 静态 `10.0.0.1/24`，DHCP 池 `10.0.0.100-249`
+- 双网口：第一口(eth0)=WAN(自动获取)、第二口(eth1)=LAN；单网口：该口=LAN
+- dnsmasq 带公共上游 DNS（223.5.5.5 / 119.29.29.29）
+- 这些默认值只在**原厂默认配置**的机器上落一次（刚装机的机器）；已经自己配过网络的机器一字不改，
+  升级时网口角色、WAN 设置、无线中继原样保留
+
+实现方式：一个独立的 `/etc/uci-defaults/99-slim-network`（OpenWrt 标准首启机制，
+排在官方 `09_istoreos` 之后执行，跑完即被系统删除）；官方文件与镜像**不做任何运行时改动**，
+没有常驻服务、没有开机自检。
+
+## 五、OTA 在线升级指向本仓库
+
+`/lib/upgrade/ota.sh` 的 OTA 地址改为 `https://github.com/bluise/istoreos/releases/latest/download`，
+并随每次构建发布 `version.latest.v2` / `version.index.v2` 两个清单（格式与官方一致）。
+效果：误点「系统 → OTA」也只会刷本项目产出的固件；取不到 GitHub 时只会报错。
+
+## 六、构建
+
+**用 GitHub Actions（推荐）**
+
+Actions →「构建 iStoreOS 精简版镜像」：
+
+- 往 master 推 `recipe/`、`files/` 或本工作流的改动 —— 自动构建
+- 每天 04:10（北京时间）检查官方是否出新版，版本没变则跳过
+- 手动 Run workflow（参数可留空：自动取官方当前最新镜像，多源重试并校验 sha256）
+
+约 4 分钟出结果，发布 Release 并只保留最新一版。
+
+**本地跑**
 
 ```sh
 # 依赖：python3 + squashfs-tools（mksquashfs/unsquashfs）+ pigz + curl
@@ -79,66 +77,22 @@ python3 recipe/build.py \
   --ddns-go-tar  ddns-go.tar.gz \
   --oaf-dir       files/oaf \
   --out iStoreOS-efi.img.gz
-# 也可以直接给 URL：--upstream-url https://.../istoreos-xxx.img.gz
 ```
 
-脚本会自己完成：解压 → 从 p2 分区切 squashfs → unsquashfs → 删包（数据库记录/文件/world/依赖行一起清）
-→ 用镜像自带的 apk 补装（可 `--rewrite-mirror` 把源换成 downloads.openwrt.org，CI 里默认开）
-→ 打补丁 → mksquashfs 重打包 → 写回 p2（并清零 p2 剩余空间）→ 自检 → gzip。
+## 七、仓库结构
 
-自检包括：关键文件齐全、应删项确实不存在、**p2 区段与 squashfs 逐字节一致**、解压后长度正确。
+```
+.github/workflows/build.yml   工作流：下载官方镜像 + 插件 -> 跑配方 -> 出镜像 -> 发 Release
+recipe/build.py               主流程：解包 -> 删包 -> 补装 -> 打补丁 -> 重打包 -> 自检
+recipe/patches.py             界面/配置补丁（每处都带断言，上游改版会立刻构建失败）
+recipe/remove-packages.txt    要删的 330 个包
+recipe/extra-packages.txt     要补装的包
+files/netpolicy/99-slim-network  默认网络（独立首启脚本）
+files/ddns-go/*               DDNS-GO 的 LuCI 集成文件
+files/oaf/*                   OAF v7 的 4 个 apk（内核不匹配时自动跳过）
+```
 
----
+## 八、刷写
 
-## 五、OTA 在线升级已指向本仓库
-
-`/lib/upgrade/ota.sh` 原本把在线升级指向官方的 `fw0.koolcenter.com`（那是**官方完整镜像**，
-误点一下就把精简版刷没了）。本配方会把它改成指向本仓库：
-
-    https://github.com/bluise/istoreos/releases/latest/download
-
-工作流每次构建还会额外发布两个 OTA 清单文件，这样设备上的「系统 → OTA」检查到的就是本项目的
-固件（文件名 + sha256 都对得上）：
-
-- `version.latest.v2` —— 第 1 行 `[版本](镜像文件名)`，后面一行 `SHA256: <校验和>`
-- `version.index.v2` —— 版本号列表
-
-效果：**误点 OTA 也只会刷本项目自己产出的固件**；如果设备取不到 GitHub，OTA 只会报错，
-不会刷到官方镜像。想手动刷还是走「系统 → 备份/刷写固件」。
-
-## 六、注意点（踩过的坑）
-
-1. **不要用 `apk del` 手删某些包**：`apk del` 会级联删除依赖它的包。例如 `quickstart`
-   声明依赖 `mdadm`/`smartd`/`smartmontools`，直接 `apk del` 会把 `quickstart` 一起删掉
-   —— 而 **iStoreOS 的首页就是 quickstart 提供的**，一删首页就没了。
-   本配方用的是"改数据库依赖记录 + 按文件清单精确删文件"，所以首页完好。
-2. **上游镜像升级会把这些改动全部冲掉**（p2 被替换），这就是本仓库存在的意义：
-   用工作流重新产出精简镜像，而不是直接刷官方镜像。
-3. **应用商店里点"更新"可能把删掉的依赖装回来**（比如更新 quickstart 时会重新拉 mdadm/smartmontools）。
-   发现菜单项又冒出来了，多半是这个原因。
-4. **OpenClash 不含内核**：第一次用要在页面 →「内核」里自己下（先在「常规设置 → GitHub 地址代理」
-   填个可用加速地址）。
-5. **OAF 的 kmod 与内核版本绑定**：`files/oaf/kmod-oaf-6.12.94-r1.apk` 只适用于 6.12.94 内核；
-   上游换内核后工作流会自动跳过 OAF 升级（首页「家长控制」链接也会自动保持 v6 的写法）。
-
----
-
-## 七、已验证
-
-本仓库的工作流已实际跑通并验证（2026-09-22）：
-
-- Actions 运行一次约 **4 分钟**（docker 免费额度友好；公开仓库不消耗额度）
-- 产出 `iStoreOS-efi.img.gz` 约 **62.2 MB**，并在 Release 里带 sha256
-- 把该产物在 KVM 虚拟机里真机启动验证：
-  - 能启动；首页 200；**首页"磁盘信息"正常**（守护进程磁盘接口 200 且返回真实磁盘数据）
-  - DDNS-GO 首启即在运行（进程 1 个、9876 网页界面可访问）
-  - OpenClash 页面 200、规则数据 GeoSite.dat 在（内核未内置，按需在页面里下）
-  - 磁盘管理 200、OAF 页面 200（OAF 已升到 v7.0.1）、主题只剩 Argon
-  - 菜单里 WireGuard / 异地组网 / 网络唤醒 / CIFS 挂载 / ddns-scripts 均为 0 处
-
-## 八、当前已验证的成品
-
-- `iStoreOS-25.12.5-x86_64-slim-efi.img.gz`（约 63 MB，官方 232 MB）
-- 实测（KVM 虚拟机真跑）：能启动、首页磁盘信息正常、DDNS-GO 首启即在运行（9876 可访问）、
-  OpenClash 页面与状态接口 200、磁盘管理 200、OAF 页面 200、主题只剩 Argon、
-  **网页升级（sysupgrade）后插件与配置全部保留**（实测换整份新 rootfs，nano/配置/hostname 都在）
+- 已装 iStoreOS 的机器：系统 →「备份/刷写固件」选 `img.gz`（只换 p1/p2，overlay 不动，配置与插件保留）
+- 新装机：`gunzip -c iStoreOS-efi.img.gz | sudo dd of=/dev/sdX bs=4M conv=fsync`，或用 balenaEtcher
