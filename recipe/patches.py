@@ -296,17 +296,63 @@ def patch_ota(root):
 
 
 # ---------------------------------------------------------------------------
+# 8a) /etc/rc.local 兜底：S19 的自检万一被别的脚本挡住，开机最后再跑一遍
+#     （配置正常时是空操作，不会反复写 uci）
+# ---------------------------------------------------------------------------
+RC_LOCAL_LINE = '[ -x /usr/libexec/netpolicy.sh ] && /usr/libexec/netpolicy.sh >/dev/null 2>&1'
+
+
+def patch_rc_local(root):
+    f = os.path.join(root, "etc/rc.local")
+    if not os.path.exists(f):
+        FAIL.append("找不到 /etc/rc.local")
+        return
+    s = _read(f)
+    if "netpolicy.sh" in s:
+        return
+    lines = s.rstrip("\n").split("\n")
+    idx = None
+    for i, ln in enumerate(lines):
+        if ln.strip() == "exit 0":
+            idx = i
+    block = ["# 默认网络策略自检（OTA 升级保留 overlay，老配置里的设备名残留靠它修）",
+             RC_LOCAL_LINE]
+    if idx is None:
+        lines += block
+    else:
+        lines[idx:idx] = block
+    _write(f, "\n".join(lines) + "\n")
+
+
+# ---------------------------------------------------------------------------
 # 8) 默认网络策略：LAN = 10.0.0.1；双网口 -> 第一口 WAN、第二口 LAN；单网口 -> LAN
-#    真正的分配逻辑放在 /etc/uci-defaults/99-netpolicy（首启执行，排在 config_generate
-#    和 09_istoreos 之后）。这里只负责把脚本放进去，并顺手把镜像里写死的
-#    192.168.100.1 兜底替换成 10.0.0.1。
+#    分配逻辑放在 /usr/libexec/netpolicy.sh，由两处调用：
+#      · /etc/uci-defaults/98-netpolicy-v2（全新刷机首启）
+#      · /etc/init.d/netpolicy（每次开机自检，修升级后残留的旧配置）
+#    这里只负责把文件放进去，并顺手把镜像里写死的 192.168.100.1 兜底换成 10.0.0.1。
 # ---------------------------------------------------------------------------
 def patch_network(root, files_dir):
-    src = os.path.join(files_dir, "netpolicy", "98-netpolicy-v2")
-    if not os.path.exists(src):
-        FAIL.append("缺少网络策略脚本: %s" % src)
-        return
-    copy(src, os.path.join(root, "etc/uci-defaults/98-netpolicy-v2"), 0o755)
+    ndir = os.path.join(files_dir, "netpolicy")
+    needed = {
+        "netpolicy.sh": "usr/libexec/netpolicy.sh",
+        "98-netpolicy-v2": "etc/uci-defaults/98-netpolicy-v2",
+        "netpolicy.init": "etc/init.d/netpolicy",
+    }
+    for src_name, rel in needed.items():
+        src = os.path.join(ndir, src_name)
+        if not os.path.exists(src):
+            FAIL.append("缺少网络策略文件: %s" % src)
+            return
+        copy(src, os.path.join(root, rel), 0o755)
+
+    # 开机自检（S19，在 network 之前）：修掉升级后残留的 wan/wan6 设备名
+    rcd = os.path.join(root, "etc/rc.d")
+    os.makedirs(rcd, exist_ok=True)
+    for link_name in ("S19netpolicy", "K90netpolicy"):
+        link = os.path.join(rcd, link_name)
+        if os.path.lexists(link):
+            os.unlink(link)
+        os.symlink("../init.d/netpolicy", link)
 
     targets = [
         "etc/board.json",
@@ -340,6 +386,7 @@ def patch_all(root, files_dir, oaf_v7=False):
     patch_smartd_conf(root)
     patch_ota(root)
     patch_network(root, files_dir)
+    patch_rc_local(root)
     patch_quickstart_spa(root, oaf_v7=oaf_v7)
     patch_luci(root)
     patch_theme(root)

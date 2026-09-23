@@ -1,0 +1,17 @@
+#!/bin/sh /etc/rc.common
+# 每次开机兜底执行默认网络策略（幂等：配置正常时什么都不做）。
+# 存在的意义：OTA 升级保留 overlay，/etc/config 里的老配置不会更新，
+# 像 network.wan6.device='@wan' 这种"设备不存在"的残留只能靠开机自检修掉。
+START=19
+STOP=90
+# 注意：这里**不能**写 USE_PROCD=0 —— rc.common 判断的是变量是否非空，
+# 写成 0 也会走 procd 分支去调用 start_service，start() 就永远不会被执行。
+
+start() {
+	[ -x /usr/libexec/netpolicy.sh ] && /usr/libexec/netpolicy.sh
+	return 0
+}
+
+boot() {
+	start "$@"
+}
