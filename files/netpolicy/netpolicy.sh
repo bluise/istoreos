@@ -39,6 +39,17 @@ nics() {
 
 [ -f /etc/config/network ] || exit 0
 
+# ---------------------------------------------------------------------------
+# 只在"刚刷机 / 刚在线升级后的第一次开机"做事：比对固件版本号，见过就直接退出。
+# 正常重启、断电重开都不会再做任何检查（只读两个小文件，约 1 毫秒）。
+# 想强制再跑一次：rm /etc/netpolicy.applied
+# ---------------------------------------------------------------------------
+VER=$(sed -n "s/^DISTRIB_REVISION=['\"]\{0,1\}\([^'\"]*\).*/\1/p" /etc/openwrt_release 2>/dev/null | head -1)
+[ -n "$VER" ] || VER=$(sed -n "s/^DISTRIB_VERSION=['\"]\{0,1\}\([^'\"]*\).*/\1/p" /etc/openwrt_release 2>/dev/null | head -1)
+if [ -f "$FLAG" ] && [ -n "$VER" ] && [ "$(head -n1 "$FLAG")" = "$VER" ]; then
+	exit 0
+fi
+
 # 等网口就绪（开机早期可能还没枚举完）
 i=0
 while [ "$i" -lt 15 ]; do
@@ -80,13 +91,24 @@ if [ -n "$WAN_NIC" ]; then
 	for s in wan wan6; do
 		uci -q get "network.$s" >/dev/null 2>&1 || continue
 		cur=$(uci -q get "network.$s.device")
+		[ -n "$cur" ] || continue
+		[ "$cur" = "$WAN_NIC" ] && continue
 		case "$cur" in
-			"$WAN_NIC") ;;
-			@*) uci set "network.$s.device=$WAN_NIC"; fixed="$fixed $s($cur)" ;;
-			"") ;;
-			*) if ! dev_ok "$cur"; then
-				uci set "network.$s.device=$WAN_NIC"; fixed="$fixed $s($cur)"
-			   fi ;;
+			@*)
+				# 形如 @wan 的引用：被引用的接口还在就保留不动（这是 OpenWrt 的默认写法，
+				# 比如 wan 改用 PPPoE 时 wan6 就该跟着 wan）。只有指向不存在的接口才算悬空。
+				ref=${cur#@}
+				if ! uci -q get "network.$ref" >/dev/null 2>&1; then
+					uci set "network.$s.device=$WAN_NIC"
+					fixed="$fixed $s($cur)"
+				fi
+				;;
+			*)
+				if ! dev_ok "$cur"; then
+					uci set "network.$s.device=$WAN_NIC"
+					fixed="$fixed $s($cur)"
+				fi
+				;;
 		esac
 	done
 fi
@@ -118,9 +140,10 @@ if [ -n "$fixed" ] || [ "$dns_changed" = 1 ]; then
 fi
 
 # ---------------------------------------------------------------------------
-# 已完整应用过一次 -> 之后只修复，不再覆盖用户自己改过的配置
+# 标记存在说明已完整应用过一次 -> 之后只做修复，绝不覆盖用户自己改过的配置
 # ---------------------------------------------------------------------------
 if [ -f "$FLAG" ]; then
+	printf '%s\n' "$VER" >"$FLAG"   # 记住"这个固件版本已经自检过"，下次正常重启就不再进来
 	[ -n "$fixed$dns_changed" ] || log "网络配置正常，跳过"
 	exit 0
 fi
@@ -130,11 +153,11 @@ CUR_IP=$(uci -q get network.lan.ipaddr)
 CUR_PORTS=$(uci -q get network.@device[0].ports)
 if [ "$CUR_IP" = "$LAN_IP" ] && echo "$CUR_PORTS" | grep -qw "$LAN_NIC"; then
 	if [ -z "$WAN_NIC" ]; then
-		[ -z "$(uci -q get network.wan)" ] && { : >"$FLAG"; log "网络已符合策略($LAN_NIC=LAN)，标记完成"; exit 0; }
+		[ -z "$(uci -q get network.wan)" ] && { printf '%s\n' "$VER" >"$FLAG"; log "网络已符合策略($LAN_NIC=LAN)，标记完成"; exit 0; }
 	elif [ "$(uci -q get network.wan.device)" = "$WAN_NIC" ] \
 	     && [ "$(uci -q get network.wan6.device)" = "$WAN_NIC" ] \
 	     && [ "$(uci -q get network.wan.peerdns)" = "0" ]; then
-		: >"$FLAG"
+		printf '%s\n' "$VER" >"$FLAG"
 		log "网络已符合策略($WAN_NIC=WAN,$LAN_NIC=LAN)，标记完成"
 		exit 0
 	fi
@@ -198,7 +221,7 @@ if [ -e /etc/config/dhcp ]; then
 	uci commit dhcp
 fi
 
-: >"$FLAG"
+printf '%s\n' "$VER" >"$FLAG"
 
 # ---- 让配置立即生效（只做这一次）----
 /etc/init.d/network reload >/dev/null 2>&1
