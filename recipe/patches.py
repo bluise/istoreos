@@ -296,63 +296,33 @@ def patch_ota(root):
 
 
 # ---------------------------------------------------------------------------
-# 8a) /etc/rc.local 兜底：S19 的自检万一被别的脚本挡住，开机最后再跑一遍
-#     （配置正常时是空操作，不会反复写 uci）
+# 8) 默认网络：直接写进 iStoreOS 自己的首启脚本 /etc/uci-defaults/09_istoreos
+#    （官方镜像里 /etc/config/network 是首启时由 /bin/rescan_nic + 这个脚本生成的，
+#      所以默认值的正确位置就是这里；不额外加任何服务/自检脚本）
+#      · LAN 固定 10.0.0.1；第一个网口=WAN(dhcp)，其余网口=LAN；单网口=LAN
+#      · 顺手把镜像里写死的 192.168.100.1 兜底换成 10.0.0.1
 # ---------------------------------------------------------------------------
-RC_LOCAL_LINE = '[ -x /usr/libexec/netpolicy.sh ] && /usr/libexec/netpolicy.sh >/dev/null 2>&1'
+DEFAULTS_ANCHOR = "\nexit 0\n"
 
 
-def patch_rc_local(root):
-    f = os.path.join(root, "etc/rc.local")
-    if not os.path.exists(f):
-        FAIL.append("找不到 /etc/rc.local")
-        return
-    s = _read(f)
-    if "netpolicy.sh" in s:
-        return
-    lines = s.rstrip("\n").split("\n")
-    idx = None
-    for i, ln in enumerate(lines):
-        if ln.strip() == "exit 0":
-            idx = i
-    block = ["# 默认网络策略自检（OTA 升级保留 overlay，老配置里的设备名残留靠它修）",
-             RC_LOCAL_LINE]
-    if idx is None:
-        lines += block
-    else:
-        lines[idx:idx] = block
-    _write(f, "\n".join(lines) + "\n")
-
-
-# ---------------------------------------------------------------------------
-# 8) 默认网络策略：LAN = 10.0.0.1；双网口 -> 第一口 WAN、第二口 LAN；单网口 -> LAN
-#    分配逻辑放在 /usr/libexec/netpolicy.sh，由两处调用：
-#      · /etc/uci-defaults/98-netpolicy-v2（全新刷机首启）
-#      · /etc/init.d/netpolicy（每次开机自检，修升级后残留的旧配置）
-#    这里只负责把文件放进去，并顺手把镜像里写死的 192.168.100.1 兜底换成 10.0.0.1。
-# ---------------------------------------------------------------------------
 def patch_network(root, files_dir):
-    ndir = os.path.join(files_dir, "netpolicy")
-    needed = {
-        "netpolicy.sh": "usr/libexec/netpolicy.sh",
-        "98-netpolicy-v2": "etc/uci-defaults/98-netpolicy-v2",
-        "netpolicy.init": "etc/init.d/netpolicy",
-    }
-    for src_name, rel in needed.items():
-        src = os.path.join(ndir, src_name)
-        if not os.path.exists(src):
-            FAIL.append("缺少网络策略文件: %s" % src)
-            return
-        copy(src, os.path.join(root, rel), 0o755)
-
-    # 开机自检（S19，在 network 之前）：修掉升级后残留的 wan/wan6 设备名
-    rcd = os.path.join(root, "etc/rc.d")
-    os.makedirs(rcd, exist_ok=True)
-    for link_name in ("S19netpolicy", "K90netpolicy"):
-        link = os.path.join(rcd, link_name)
-        if os.path.lexists(link):
-            os.unlink(link)
-        os.symlink("../init.d/netpolicy", link)
+    src = os.path.join(files_dir, "netpolicy", "09-default-network.block")
+    if not os.path.exists(src):
+        FAIL.append("缺少默认网络片段: %s" % src)
+        return
+    block = _read(src)
+    f = os.path.join(root, "etc/uci-defaults/09_istoreos")
+    if not os.path.exists(f):
+        FAIL.append("找不到 /etc/uci-defaults/09_istoreos（上游改了首启脚本位置）")
+        return
+    t = _read(f)
+    if "精简版默认网络" in t:
+        return
+    if not t.endswith(DEFAULTS_ANCHOR):
+        FAIL.append("/etc/uci-defaults/09_istoreos 结尾不是预期的 exit 0，没敢改")
+        return
+    _write(f, t[: -len(DEFAULTS_ANCHOR)] + "\n" + block + DEFAULTS_ANCHOR)
+    print("  已把默认网络写进 /etc/uci-defaults/09_istoreos")
 
     targets = [
         "etc/board.json",
@@ -364,21 +334,21 @@ def patch_network(root, files_dir):
     ]
     n = 0
     for rel in targets:
-        f = os.path.join(root, rel)
-        if not os.path.isfile(f):
+        p = os.path.join(root, rel)
+        if not os.path.isfile(p):
             continue
         try:
-            t = _read(f)
+            x = _read(p)
         except Exception:
             continue
-        if "192.168.100.1" in t:
-            _write(f, t.replace("192.168.100.1", "10.0.0.1"))
+        if "192.168.100.1" in x:
+            _write(p, x.replace("192.168.100.1", "10.0.0.1"))
             n += 1
-        if "192.168.100." in t:
-            t = _read(f)
-            _write(f, t.replace("192.168.100.", "10.0.0."))
+        if "192.168.100." in x:
+            x = _read(p)
+            _write(p, x.replace("192.168.100.", "10.0.0."))
             n += 1
-    print("  已放入默认网络策略脚本（并兜底替换了 %d 个文件里的 192.168.100.x）" % n)
+    print("  兜底替换了 %d 个文件里的 192.168.100.x" % n)
 
 
 # ---------------------------------------------------------------------------
@@ -386,7 +356,6 @@ def patch_all(root, files_dir, oaf_v7=False):
     patch_smartd_conf(root)
     patch_ota(root)
     patch_network(root, files_dir)
-    patch_rc_local(root)
     patch_quickstart_spa(root, oaf_v7=oaf_v7)
     patch_luci(root)
     patch_theme(root)

@@ -1,5 +1,0 @@
-#!/bin/sh
-# 全新刷机首次开机执行一次（排在系统 config_generate 之后）。
-# 真正的逻辑在 /usr/libexec/netpolicy.sh，每次开机由 /etc/init.d/netpolicy 兜底再跑一遍。
-/usr/libexec/netpolicy.sh
-exit 0

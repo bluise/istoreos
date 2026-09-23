@@ -1,0 +1,87 @@
+# ============================================================================
+# 精简版默认网络（只在这个首启脚本里执行一次，和 iStoreOS 自己的 rescan_nic 同一个机制）
+#   · LAN 固定 10.0.0.1/24，DHCP 池 10.0.0.100-249
+#   · 第一个物理网口 = WAN(自动获取)，其余网口 = LAN
+#   · 只有一个网口时：该网口就是 LAN（不建 WAN，适合单臂/旁路由）
+#   · dnsmasq 带公共上游 DNS，网口没拿到租约时也能解析域名
+# 这里**不做任何开机自检**：配置一旦生成就是用户的，之后升级/重启都不再动它。
+# ============================================================================
+_wan=''
+_lanports=''
+_n=0
+for _d in /sys/class/net/*; do
+	_i=${_d##*/}
+	[ -e "$_d/device" ] || continue
+	case "$_i" in
+		lo|br-*|veth*|docker*|@*) continue ;;
+		eth*|en*) ;;
+		*) continue ;;
+	esac
+	_n=$((_n + 1))
+	if [ "$_n" -eq 1 ]; then
+		_wan="$_i"
+	else
+		_lanports="$_lanports $_i"
+	fi
+done
+
+if [ -n "$_wan" ]; then
+	[ -n "$_lanports" ] || _lanports="$_wan"   # 单网口：该口当 LAN
+
+	# 重建 br-lan 桥（rescan_nic 可能把所有网口都放进去了）
+	_ci=0
+	while uci -q get "network.@device[$_ci]" >/dev/null; do
+		if [ "$(uci -q get network.@device[$_ci].name)" = "br-lan" ]; then
+			uci -q delete "network.@device[$_ci]"
+			continue
+		fi
+		_ci=$((_ci + 1))
+	done
+	uci -q add network device >/dev/null
+	uci -q set network.@device[-1].name='br-lan'
+	uci -q set network.@device[-1].type='bridge'
+	for _p in $_lanports; do
+		uci -q add_list network.@device[-1].ports="$_p"
+	done
+
+	uci -q set network.lan.device='br-lan'
+	uci -q set network.lan.proto='static'
+	uci -q set network.lan.ipaddr='10.0.0.1'
+	uci -q set network.lan.netmask='255.255.255.0'
+	uci -q set network.lan.ip6assign='60'
+	uci -q delete network.lan.dns
+	uci -q add_list network.lan.dns='223.5.5.5'
+	uci -q add_list network.lan.dns='119.29.29.29'
+
+	if [ "$_lanports" != " $_wan" ]; then
+		uci -q set network.wan=interface
+		uci -q set network.wan.device="$_wan"
+		uci -q set network.wan.proto='dhcp'
+		uci -q set network.wan.peerdns='0'
+		uci -q delete network.wan.dns
+		uci -q add_list network.wan.dns='223.5.5.5'
+		uci -q add_list network.wan.dns='119.29.29.29'
+		uci -q set network.wan6=interface
+		uci -q set network.wan6.device="$_wan"
+		uci -q set network.wan6.proto='dhcpv6'
+	else
+		uci -q delete network.wan
+		uci -q delete network.wan6
+	fi
+	uci -q commit network
+
+	# DHCP 地址池 + dnsmasq 公共上游
+	uci -q set dhcp.lan=dhcp
+	uci -q set dhcp.lan.interface='lan'
+	uci -q set dhcp.lan.start='100'
+	uci -q set dhcp.lan.limit='150'
+	uci -q set dhcp.lan.leasetime='12h'
+	uci -q set dhcp.lan.ignore='0'
+	if ! uci -q get dhcp.@dnsmasq[0].server | grep -q '223\.5\.5\.5'; then
+		uci -q add_list dhcp.@dnsmasq[0].server='223.5.5.5'
+		uci -q add_list dhcp.@dnsmasq[0].server='119.29.29.29'
+	fi
+	uci -q commit dhcp
+
+	logger -t istoreos-slim "默认网络: LAN=br-lan(10.0.0.1 ->${_lanports}) WAN=${_wan:-无}"
+fi
