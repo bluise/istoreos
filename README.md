@@ -52,7 +52,12 @@
 ## 五、OTA 在线升级指向本仓库
 
 `/lib/upgrade/ota.sh` 的 OTA 地址改为 `https://github.com/bluise/istoreos/releases/latest/download`，
-并随每次构建发布 `version.latest.v2` / `version.index.v2` 两个清单（格式与官方一致）。
+并随每次构建发布 `version.latest.v2` / `version.index.v2` 清单（格式与官方一致）。
+
+每次构建还会给固件打一个独立的版本号尾段（`--build-stamp`，形如 `25.12.5-202609230235`，
+官方原版是 `25.12.5-2026091113`），写进固件的 `DISTRIB_REVISION` 并与 OTA 清单一一致，
+这样设备上的「系统 → OTA」才能识别出"有新版本"；升级后设备版本等于该尾段，OTA 显示已是最新。
+
 效果：误点「系统 → OTA」也只会刷本项目产出的固件；取不到 GitHub 时只会报错。
 
 ## 六、构建
