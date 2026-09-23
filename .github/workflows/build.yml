@@ -125,7 +125,7 @@ jobs:
           else
             ARGS=""   # 留空 -> 配方自己去官方 OTA 清单里找当前最新镜像
           fi
-          ARGS="$ARGS --out iStoreOS-efi.img.gz --work $RUNNER_TEMP/slim"
+          ARGS="$ARGS --out iStoreOS-efi.img.gz --work $RUNNER_TEMP/build"
           ARGS="$ARGS --openclash-apk openclash.apk --ddns-go-tar ddns-go.tar.gz"
           ARGS="$ARGS --build-stamp $STAMP"
           if [ "$USE_OAF_V7" = "true" ]; then ARGS="$ARGS --oaf-dir files/oaf"; fi

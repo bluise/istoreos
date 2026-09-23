@@ -18,7 +18,7 @@ case "$_cur_ip" in
 	192.168.100.*) ;;                   # 原厂默认(实测 rescan_nic 写的是 192.168.100.1/24)
 	*)
 		# 已经自己配过网络的机器：一个字都不改（避免冲掉现有的 WAN / 无线中继设置）
-		logger -t istoreos-slim "已有自定义网络配置(LAN=$_cur_ip)，跳过默认网络设置"
+		logger -t netdefault "已有自定义网络配置(LAN=$_cur_ip)，跳过默认网络设置"
 		exit 0
 		;;
 esac
@@ -100,7 +100,7 @@ if [ -n "$_wan" ]; then
 	fi
 	uci -q commit dhcp
 
-	logger -t istoreos-slim "默认网络: LAN=br-lan(10.0.0.1 ->${_lanports}) WAN=${_wan:-无}"
+	logger -t netdefault "默认网络: LAN=br-lan(10.0.0.1 ->${_lanports}) WAN=${_wan:-无}"
 fi
 
 exit 0

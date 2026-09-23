@@ -313,7 +313,7 @@ def rewrite_mirrors(root):
                 out.append(line.replace("https://mirrors.cernet.edu.cn/openwrt",
                                         "https://downloads.openwrt.org"))
             elif st.startswith("http") and "downloads.openwrt.org" not in st:
-                out.append("# [slim] 暂时停用: " + line)
+                out.append("# [停用] 暂时停用: " + line)
             else:
                 out.append(line)
         open(fp, "w", encoding="utf-8").write("\n".join(out))
@@ -337,7 +337,7 @@ def stage_extras(root, args, work):
     repos = list(args.repo or [])
     extras_file = os.path.join(os.path.dirname(HERE), "recipe", "extra-packages.txt")
     extras = [p for p in read_list(extras_file) if p != "luci-app-openclash"]
-    # ruby / ruby-yaml + Wyse 3040 的 SDIO 无线链（清单见 slim/extra-packages.txt）
+    # ruby / ruby-yaml + Wyse 3040 的 SDIO 无线链（清单见 recipe/extra-packages.txt）
     apk(root, ["add"] + extras, extra_repos=repos)
     # OpenClash（官方 release 的真 apk 包）
     if args.openclash_apk:
@@ -476,7 +476,7 @@ def main():
     ap.add_argument("--upstream-url", default="")
     ap.add_argument("--upstream-file", default="")
     ap.add_argument("--out", required=True)
-    ap.add_argument("--work", default="/tmp/istoreos-slim")
+    ap.add_argument("--work", default="/tmp/istoreos-build")
     ap.add_argument("--openclash-apk", default="")
     ap.add_argument("--ddns-go-tar", default="")
     ap.add_argument("--oaf-dir", default="")

@@ -6,7 +6,7 @@ istoreos / recipe/patches.py
 把"官方 iStoreOS rootfs"改成"精简版"所需的所有文件级改动。
 每个改动都带断言：锚点找不到就报错退出，绝不静默跳过（上游改版时能立刻发现）。
 
-用法（由 slim.py 调用）：
+用法（由 build.py 调用）：
     patch_all(rootfs_dir, files_dir)
 """
 import os
@@ -316,19 +316,19 @@ def patch_ota(root):
 
 
 # ---------------------------------------------------------------------------
-# 8) 默认网络：**独立**的首启脚本 /etc/uci-defaults/99-slim-network
+# 8) 默认网络：**独立**的首启脚本 /etc/uci-defaults/99-default-network
 #    · 官方文件一个字不改（官方 09_istoreos / rescan_nic 原样保留）
 #    · uci-defaults 按文件名排序执行，99- 排在官方 09_istoreos 之后，所以能覆盖
 #      rescan_nic 生成的结果；跑完系统自己删掉该脚本，之后重启/升级都不再干预
 #      （官方 09_istoreos/blocks 里若有写死的 192.168.100.x，这里只替换非脚本类文件）
 # ---------------------------------------------------------------------------
 def patch_network(root, files_dir):
-    src = os.path.join(files_dir, "netpolicy", "99-slim-network")
+    src = os.path.join(files_dir, "netpolicy", "99-default-network")
     if not os.path.exists(src):
         FAIL.append("缺少默认网络脚本: %s" % src)
         return
-    copy(src, os.path.join(root, "etc/uci-defaults/99-slim-network"), 0o755)
-    print("  已放入默认网络首启脚本 /etc/uci-defaults/99-slim-network（不改官方文件）")
+    copy(src, os.path.join(root, "etc/uci-defaults/99-default-network"), 0o755)
+    print("  已放入默认网络首启脚本 /etc/uci-defaults/99-default-network（不改官方文件）")
 
     targets = [
         "etc/board.json",

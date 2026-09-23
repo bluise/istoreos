@@ -45,7 +45,7 @@
 - 这些默认值只在**原厂默认配置**的机器上落一次（刚装机的机器）；已经自己配过网络的机器一字不改，
   升级时网口角色、WAN 设置、无线中继原样保留
 
-实现方式：一个独立的 `/etc/uci-defaults/99-slim-network`（OpenWrt 标准首启机制，
+实现方式：一个独立的 `/etc/uci-defaults/99-default-network`（OpenWrt 标准首启机制，
 排在官方 `09_istoreos` 之后执行，跑完即被系统删除）；官方文件与镜像**不做任何运行时改动**，
 没有常驻服务、没有开机自检。
 
@@ -92,7 +92,7 @@ recipe/build.py               主流程：解包 -> 删包 -> 补装 -> 打补�
 recipe/patches.py             界面/配置补丁（每处都带断言，上游改版会立刻构建失败）
 recipe/remove-packages.txt    要删的 330 个包
 recipe/extra-packages.txt     要补装的包
-files/netpolicy/99-slim-network  默认网络（独立首启脚本）
+files/netpolicy/99-default-network  默认网络（独立首启脚本）
 files/ddns-go/*               DDNS-GO 的 LuCI 集成文件
 files/oaf/*                   OAF v7 的 4 个 apk（内核不匹配时自动跳过）
 ```
