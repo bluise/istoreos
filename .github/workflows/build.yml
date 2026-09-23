@@ -1,8 +1,10 @@
 name: 构建 iStoreOS 精简版镜像
 
-# 上游出新版时：改一下 upstream_url 指向新的官方镜像，然后点 Run workflow。
-# 工作流会自动：下载官方镜像 → 删掉不需要的包 → 装回你要的插件（DDNS-GO / OpenClash）
-# → 应用界面精简补丁 → 重打包 → 产出新的精简 img.gz（并发布到 Release）。
+# 触发方式：
+#   1. 推送到 master（只改 recipe/ files/ 或本工作流时）—— 自动构建，不用手点
+#   2. 每天定时检查官方是否有新版；版本没变就整轮跳过，省时间也不刷屏
+#   3. 手动 Run workflow —— 参数都可以留空（留空=自动去官方 OTA 清单找当前最新镜像）
+# 构建产物：精简 img.gz + 校验和 + OTA 清单，发布到 Release，且**只保留最新一个**
 on:
   workflow_dispatch:
     inputs:
@@ -26,12 +28,60 @@ on:
         description: '构建成功后创建 Release（否则只上传 artifact）'
         type: boolean
         default: true
+  push:
+    branches: [master]
+    paths:
+      - 'recipe/**'
+      - 'files/**'
+      - '.github/workflows/build.yml'
+  schedule:
+    # 每天 20:10 UTC = 北京时间 04:10 检查一次上游
+    - cron: '10 20 * * *'
 
 permissions:
   contents: write
 
+env:
+  # 非 workflow_dispatch 触发时 inputs.* 是空的，这里统一给默认值
+  OPENCLASH_VERSION: ${{ inputs.openclash_version || '0.47.156' }}
+  DDNS_GO_VERSION: ${{ inputs.ddns_go_version || '6.17.7' }}
+  USE_OAF_V7: ${{ (github.event_name != 'workflow_dispatch' || inputs.use_oaf_v7) && 'true' || 'false' }}
+  MAKE_RELEASE: ${{ (github.event_name != 'workflow_dispatch' || inputs.make_release) && 'true' || 'false' }}
+  OFFICIAL_OTA_BASE: https://fw.koolcenter.com/iStoreOS/x86_64_efi
+
 jobs:
+  # 定时触发时先看看官方是否真出了新版，没变就不折腾
+  check:
+    if: ${{ github.event_name == 'schedule' }}
+    runs-on: ubuntu-24.04
+    continue-on-error: true
+    outputs:
+      skip: ${{ steps.c.outputs.skip }}
+    steps:
+      - id: c
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -u
+          UP=""; CUR=""
+          UP=$(curl -fsSL --retry 3 "$OFFICIAL_OTA_BASE/version.latest.v2" 2>/dev/null | head -1) || true
+          URL=$(gh release view --json assets -q '.assets[] | select(.name=="version.latest.v2") | .url' 2>/dev/null) || true
+          if [ -n "$URL" ]; then
+            CUR=$(gh api "$URL" -H "Accept: application/octet-stream" 2>/dev/null | head -1) || true
+          fi
+          echo "官方最新: ${UP:-<取不到>}"
+          echo "本仓库最新: ${CUR:-<无 Release>}"
+          if [ -n "$UP" ] && [ "$UP" = "$CUR" ]; then
+            echo "官方版本没变，跳过本轮构建"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
   build:
+    needs: [check]
+    # check 被跳过/失败(手动触发、取不到官方清单)时照样构建，只有定时轮明确判定"没变"才跳过
+    if: ${{ always() && (github.event_name != 'schedule' || needs.check.outputs.skip != 'true') }}
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     steps:
@@ -46,7 +96,7 @@ jobs:
       - name: 下载 OpenClash（官方 release 的真 apk 包）
         run: |
           set -e
-          V="${{ inputs.openclash_version }}"
+          V="$OPENCLASH_VERSION"
           U="https://github.com/vernesong/OpenClash/releases/download/v$V/luci-app-openclash-$V.apk"
           curl -fSL --retry 3 -o openclash.apk "$U" || curl -fSL --retry 3 -o openclash.apk "https://ghfast.top/$U"
           ls -l openclash.apk
@@ -55,12 +105,13 @@ jobs:
       - name: 下载 DDNS-GO（官方静态二进制）
         run: |
           set -e
-          V="${{ inputs.ddns_go_version }}"
+          V="$DDNS_GO_VERSION"
           U="https://github.com/jeessy2/ddns-go/releases/download/v$V/ddns-go_${V}_linux_x86_64.tar.gz"
           curl -fSL --retry 3 -o ddns-go.tar.gz "$U" || curl -fSL --retry 3 -o ddns-go.tar.gz "https://ghfast.top/$U"
           tar tzf ddns-go.tar.gz
 
       - name: 构建精简镜像
+        id: build
         run: |
           set -e
           if [ -n "${{ inputs.upstream_url }}" ]; then
@@ -70,9 +121,10 @@ jobs:
           fi
           ARGS="$ARGS --out iStoreOS-efi.img.gz --work $RUNNER_TEMP/slim"
           ARGS="$ARGS --openclash-apk openclash.apk --ddns-go-tar ddns-go.tar.gz"
-          if [ "${{ inputs.use_oaf_v7 }}" = "true" ]; then ARGS="$ARGS --oaf-dir files/oaf"; fi
+          if [ "$USE_OAF_V7" = "true" ]; then ARGS="$ARGS --oaf-dir files/oaf"; fi
           eval python3 recipe/build.py $ARGS
           ls -lh iStoreOS-efi.img.gz*
+          echo "upstream=$(cat upstream.name 2>/dev/null || echo 自动探测)" >> "$GITHUB_OUTPUT"
 
       - name: 生成 OTA 清单（让设备上的 OTA 指向本仓库）
         run: |
@@ -102,7 +154,7 @@ jobs:
           retention-days: 14
 
       - name: 发布 Release
-        if: ${{ inputs.make_release }}
+        if: ${{ env.MAKE_RELEASE == 'true' }}
         uses: softprops/action-gh-release@v2
         with:
           tag_name: build-${{ github.run_number }}
@@ -110,9 +162,10 @@ jobs:
           body: |
             从官方镜像自动精简而来。
 
-            - 上游镜像: ${{ inputs.upstream_url }}
-            - OpenClash: ${{ inputs.openclash_version }}
-            - DDNS-GO: ${{ inputs.ddns_go_version }}
+            - 上游镜像: ${{ steps.build.outputs.upstream }}
+            - OpenClash: ${{ env.OPENCLASH_VERSION }}
+            - DDNS-GO: ${{ env.DDNS_GO_VERSION }}
+            - 默认网络: LAN=10.0.0.1；双网口=第一口 WAN、第二口 LAN；开机自检自动修正网口残留
 
             **刷写方法**：系统 → 备份/刷写固件，选这个 `img.gz`（在线升级，配置与已装插件都会保留）。
             新装机用 balenaEtcher 或 `gunzip -c xxx.img.gz | sudo dd of=/dev/sdX bs=4M conv=fsync`。
@@ -123,7 +176,7 @@ jobs:
             version.index.v2
 
       - name: 只保留最新一个 Release
-        if: ${{ inputs.make_release }}
+        if: ${{ env.MAKE_RELEASE == 'true' }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
