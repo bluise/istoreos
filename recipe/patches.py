@@ -383,6 +383,28 @@ def patch_version_stamp(root, stamp):
     print("  版本号尾段已写入固件: %s" % stamp)
 
 
+# ---------------------------------------------------------------------------
+# 10) Dell Wyse 3040 无线固件：补 mrvl/sd8897_uapsta.bin
+#    Wyse 3040 的无线卡是 Marvell 88W8897（SDIO 接口）。
+#    kmod-mwifiex-sdio 提供驱动模块 mwifiex_sdio.ko，
+#    mwifiex-sdio-firmware 只带 8887/8997 的固件，唯独缺 8897 SDIO 的固件
+#    （内核源码里 SD8897_DEFAULT_FW_NAME = "mrvl/sd8897_uapsta.bin"）。
+#    没有它，驱动加载后会因 request_firmware 失败而看不到无线网卡。
+#    这里把固件放进仓库（files/firmware/mrvl/sd8897_uapsta.bin），
+#    构建时拷到 rootfs，不依赖 apk 包。
+# ---------------------------------------------------------------------------
+def patch_wyse3040_firmware(root, files_dir):
+    src = os.path.join(files_dir, "firmware", "mrvl", "sd8897_uapsta.bin")
+    dst = os.path.join(root, "lib", "firmware", "mrvl", "sd8897_uapsta.bin")
+    if not os.path.exists(src):
+        FAIL.append("缺少 Wyse 3040 无线固件: %s" % src)
+        return
+    os.makedirs(os.path.dirname(dst), exist_ok=True)
+    shutil.copyfile(src, dst)
+    os.chmod(dst, 0o644)
+    print("  已放入 Wyse 3040 无线固件 /lib/firmware/mrvl/sd8897_uapsta.bin")
+
+
 def patch_all(root, files_dir, oaf_v7=False, build_stamp=""):
     patch_smartd_conf(root)
     patch_ota(root)
@@ -392,6 +414,7 @@ def patch_all(root, files_dir, oaf_v7=False, build_stamp=""):
     patch_theme(root)
     patch_ddns_go(root, files_dir)
     patch_openclash(root)
+    patch_wyse3040_firmware(root, files_dir)
     patch_version_stamp(root, build_stamp)
     if FAIL:
         print("✗ 补丁阶段有 %d 处失败:" % len(FAIL))
