@@ -15,7 +15,8 @@
 _cur_ip=$(uci -q get network.lan.ipaddr)
 case "$_cur_ip" in
 	'') ;;                              # 还没生成
-	192.168.100.*) ;;                   # 原厂默认(实测 rescan_nic 写的是 192.168.100.1/24)
+	192.168.100.*) ;;                   # 原厂默认(rescan_nic 写的是 192.168.100.1/24)
+	10.0.0.*) ;;                        # 本项目构建时已把 192.168.100.x 替换成 10.0.0.x
 	*)
 		# 已经自己配过网络的机器：一个字都不改（避免冲掉现有的 WAN / 无线中继设置）
 		logger -t netdefault "已有自定义网络配置(LAN=$_cur_ip)，跳过默认网络设置"
@@ -43,7 +44,14 @@ for _d in /sys/class/net/*; do
 done
 
 if [ -n "$_wan" ]; then
-	[ -n "$_lanports" ] || _lanports="$_wan"   # 单网口：该口当 LAN
+	# 单网口：该口只做 LAN（不建 WAN，适合单臂/旁路由）
+	# 多网口：第一块做 WAN，其余做 LAN
+	if [ "$_n" -eq 1 ]; then
+		_lanports="$_wan"
+		_single=1
+	else
+		_single=0
+	fi
 
 	# 重建 br-lan 桥（rescan_nic 可能把所有网口都放进去了）
 	_ci=0
@@ -70,7 +78,7 @@ if [ -n "$_wan" ]; then
 	uci -q add_list network.lan.dns='223.5.5.5'
 	uci -q add_list network.lan.dns='119.29.29.29'
 
-	if [ "$_lanports" != " $_wan" ]; then
+	if [ "$_single" -eq 0 ]; then
 		uci -q set network.wan=interface
 		uci -q set network.wan.device="$_wan"
 		uci -q set network.wan.proto='dhcp'
@@ -100,7 +108,11 @@ if [ -n "$_wan" ]; then
 	fi
 	uci -q commit dhcp
 
-	logger -t netdefault "默认网络: LAN=br-lan(10.0.0.1 ->${_lanports}) WAN=${_wan:-无}"
+	if [ "$_single" -eq 1 ]; then
+		logger -t netdefault "默认网络(单网口): LAN=br-lan(10.0.0.1 ->${_lanports}) WAN=无"
+	else
+		logger -t netdefault "默认网络: LAN=br-lan(10.0.0.1 ->${_lanports}) WAN=${_wan}"
+	fi
 fi
 
 exit 0
